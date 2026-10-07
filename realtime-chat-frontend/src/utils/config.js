@@ -1,0 +1,16 @@
+export const CONFIG = {
+  API_BASE_URL: "http://localhost:8080",
+  WS_BASE_URL: "http://localhost:8080",
+  TOKEN_KEY: "chatweb_token",
+  USERNAME_KEY: "chatweb_username",
+  WS_ENDPOINT: "/ws-chat",
+  WS_TOPIC: "/topic/public",
+  WS_SEND: "/app/chat.sendMessage",
+  WS_JOIN: "/app/chat.addUser",
+  WS_REMOVE: "/app/chat.removeUser",
+  WS_TYPING: "/app/chat.typing",
+  RECONNECT_DELAY_MS: 4000,
+  MAX_RECONNECT_TRIES: 5,
+  MSG_MAX_LENGTH: 2000,
+  HISTORY_PAGE_SIZE: 50,
+};
