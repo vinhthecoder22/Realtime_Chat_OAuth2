@@ -43,13 +43,8 @@ public class WebSocketController {
 
         String senderUsername = getSessionUsername(headerAccessor);
         if (senderUsername == null) {
-            senderUsername = inbound.getSender(); // fallback if interceptor set it differently
-        }
-
-        // Store in session for future messages
-        Map<String, Object> sessionAttrs = headerAccessor.getSessionAttributes();
-        if (sessionAttrs != null) {
-            sessionAttrs.put("username", senderUsername);
+            log.warn("Unauthenticated join attempt");
+            return;
         }
 
         ChatMessageDto joinMessage = chatService.buildJoinMessage(senderUsername);
@@ -69,9 +64,9 @@ public class WebSocketController {
 
     // helpers
     private String getSessionUsername(StompHeaderAccessor accessor) {
-        Map<String, Object> attrs = accessor.getSessionAttributes();
-        if (attrs == null) return null;
-        Object val = attrs.get("username");
-        return val instanceof String s ? s : null;
+        if (accessor.getUser() != null) {
+            return accessor.getUser().getName();
+        }
+        return null;
     }
 }

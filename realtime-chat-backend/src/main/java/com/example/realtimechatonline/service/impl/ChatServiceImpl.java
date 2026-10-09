@@ -13,7 +13,9 @@ import com.example.realtimechatonline.repository.MessageRepository;
 import com.example.realtimechatonline.repository.UserRepository;
 import com.example.realtimechatonline.service.ChatService;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -79,9 +81,11 @@ public class ChatServiceImpl implements ChatService {
     @Override
     @Transactional(readOnly = true)
     public List<MessageResponseDto> getHistory() {
-        return messageMapper.toMessageResponseList(
-                messageRepository.findAllByOrderByTimestampAsc()
-        );
+        PageRequest pageable = org.springframework.data.domain.PageRequest.of(0, 50, Sort.by("timestamp").descending());
+        List<MessageResponseDto> recentMessages = new java.util.ArrayList<>(messageRepository.findAllByOrderByTimestampDesc(pageable)
+                .map(messageMapper::toMessageResponse).getContent());
+        java.util.Collections.reverse(recentMessages);
+        return recentMessages;
     }
 
     @Override

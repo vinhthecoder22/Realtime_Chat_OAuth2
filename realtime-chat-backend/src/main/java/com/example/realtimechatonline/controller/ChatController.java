@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.SendTo;
+import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -50,9 +51,12 @@ public class ChatController {
 
     @MessageMapping("/chat.typing")
     @SendTo("/topic/public")
-    public ChatMessageDto processTyping(ChatMessageDto message) {
-        // Đơn giản là nhận vào và broadcast nguyên xi ra cho mọi người trong phòng
-        // Dữ liệu sẽ có dạng: { sender: "userA", type: "TYPING", content: "true" }
+    public ChatMessageDto processTyping(ChatMessageDto message, StompHeaderAccessor headerAccessor) {
+        if (headerAccessor.getUser() != null) {
+            message.setSender(headerAccessor.getUser().getName());
+        } else {
+            message.setSender(null);
+        }
         return message;
     }
 }
