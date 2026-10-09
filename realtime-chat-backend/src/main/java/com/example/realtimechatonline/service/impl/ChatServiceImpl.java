@@ -8,14 +8,15 @@ import com.example.realtimechatonline.domain.entity.Message;
 import com.example.realtimechatonline.domain.entity.MessageType;
 import com.example.realtimechatonline.domain.entity.User;
 import com.example.realtimechatonline.domain.mapper.MessageMapper;
+import com.example.realtimechatonline.domain.entity.Conversation;
+import com.example.realtimechatonline.domain.entity.ConversationType;
 import com.example.realtimechatonline.exception.extended.ResourceNotFoundException;
+import com.example.realtimechatonline.repository.ConversationRepository;
 import com.example.realtimechatonline.repository.MessageRepository;
 import com.example.realtimechatonline.repository.UserRepository;
 import com.example.realtimechatonline.service.ChatService;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +35,7 @@ public class ChatServiceImpl implements ChatService {
 
     private final MessageRepository messageRepository;
     private final UserRepository userRepository;
+    private final ConversationRepository conversationRepository;
     private final MessageMapper messageMapper;
 
     @Override
@@ -43,10 +45,14 @@ public class ChatServiceImpl implements ChatService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "User not found: " + senderUsername));
 
+        Conversation publicChat = conversationRepository.findByTypeAndName(ConversationType.PUBLIC, "Global Chat")
+                .orElseThrow(() -> new IllegalStateException("Global Chat conversation not found"));
+
         Message message = Message.builder()
                 .content(content)
                 .timestamp(Instant.now())
                 .sender(sender)
+                .conversation(publicChat)
                 .build();
 
         messageRepository.save(message);
@@ -81,8 +87,10 @@ public class ChatServiceImpl implements ChatService {
     @Override
     @Transactional(readOnly = true)
     public List<MessageResponseDto> getHistory() {
-        PageRequest pageable = org.springframework.data.domain.PageRequest.of(0, 50, Sort.by("timestamp").descending());
-        List<MessageResponseDto> recentMessages = new java.util.ArrayList<>(messageRepository.findAllByOrderByTimestampDesc(pageable)
+        Conversation publicChat = conversationRepository.findByTypeAndName(ConversationType.PUBLIC, "Global Chat")
+                .orElseThrow(() -> new IllegalStateException("Global Chat conversation not found"));
+        org.springframework.data.domain.PageRequest pageable = org.springframework.data.domain.PageRequest.of(0, 50, org.springframework.data.domain.Sort.by("timestamp").descending());
+        List<MessageResponseDto> recentMessages = new java.util.ArrayList<>(messageRepository.findByConversationIdOrderByTimestampDesc(publicChat.getId(), pageable)
                 .map(messageMapper::toMessageResponse).getContent());
         java.util.Collections.reverse(recentMessages);
         return recentMessages;
@@ -91,7 +99,9 @@ public class ChatServiceImpl implements ChatService {
     @Override
     @Transactional(readOnly = true)
     public Page<MessageResponseDto> getHistory(Pageable pageable) {
-        return messageRepository.findAllByOrderByTimestampDesc(pageable)
+        Conversation publicChat = conversationRepository.findByTypeAndName(ConversationType.PUBLIC, "Global Chat")
+                .orElseThrow(() -> new IllegalStateException("Global Chat conversation not found"));
+        return messageRepository.findByConversationIdOrderByTimestampDesc(publicChat.getId(), pageable)
                 .map(messageMapper::toMessageResponse);
     }
 }

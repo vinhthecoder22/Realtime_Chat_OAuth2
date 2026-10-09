@@ -6,7 +6,10 @@ import com.example.realtimechatonline.domain.entity.MessageType;
 import com.example.realtimechatonline.domain.entity.Role;
 import com.example.realtimechatonline.domain.entity.User;
 import com.example.realtimechatonline.domain.mapper.MessageMapper;
+import com.example.realtimechatonline.domain.entity.Conversation;
+import com.example.realtimechatonline.domain.entity.ConversationType;
 import com.example.realtimechatonline.exception.extended.ResourceNotFoundException;
+import com.example.realtimechatonline.repository.ConversationRepository;
 import com.example.realtimechatonline.repository.MessageRepository;
 import com.example.realtimechatonline.repository.UserRepository;
 import com.example.realtimechatonline.service.impl.ChatServiceImpl;
@@ -31,6 +34,7 @@ class ChatServiceTest {
 
     @Mock MessageRepository messageRepository;
     @Mock UserRepository    userRepository;
+    @Mock ConversationRepository conversationRepository;
     @Mock MessageMapper     messageMapper;
 
     @InjectMocks ChatServiceImpl chatService;
@@ -44,6 +48,15 @@ class ChatServiceTest {
                 .username("alice")
                 .role(Role.USER)
                 .build();
+
+        Conversation publicChat = Conversation.builder()
+                .id(1L)
+                .type(ConversationType.PUBLIC)
+                .name("Global Chat")
+                .build();
+
+        lenient().when(conversationRepository.findByTypeAndName(ConversationType.PUBLIC, "Global Chat"))
+                .thenReturn(Optional.of(publicChat));
     }
 
     @Test

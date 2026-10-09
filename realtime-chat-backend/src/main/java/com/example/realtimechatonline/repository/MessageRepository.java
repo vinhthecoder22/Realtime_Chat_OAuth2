@@ -18,4 +18,6 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
     @EntityGraph(attributePaths = {"sender"})
     Page<Message> findAllByOrderByTimestampDesc(Pageable pageable);
 
+    @EntityGraph(attributePaths = {"sender"})
+    Page<Message> findByConversationIdOrderByTimestampDesc(Long conversationId, Pageable pageable);
 }
