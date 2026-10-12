@@ -11,6 +11,8 @@ public interface ChatService {
 
     ChatMessageDto processAndSave(String content, String senderUsername);
 
+    ChatMessageDto processAndSave(Long conversationId, String content, String senderUsername);
+
     ChatMessageDto buildJoinMessage(String username);
 
     ChatMessageDto buildLeaveMessage(String username);
@@ -18,4 +20,7 @@ public interface ChatService {
     List<MessageResponseDto> getHistory();
 
     Page<MessageResponseDto> getHistory(Pageable pageable);
+
+    Page<MessageResponseDto> getHistoryByConversation(Long conversationId, Pageable pageable, String currentUsername);
+
 }

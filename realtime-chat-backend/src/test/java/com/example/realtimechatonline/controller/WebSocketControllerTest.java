@@ -44,10 +44,14 @@ class WebSocketControllerTest {
     void joinMessage_derivesFromPrincipal() {
         when(principal.getName()).thenReturn("real_user");
         headerAccessor.setUser(principal);
+
         ChatMessageDto inbound = ChatMessageDto.builder().sender("fake_user").type(MessageType.JOIN).build();
         ChatMessageDto outbound = ChatMessageDto.builder().sender("real_user").type(MessageType.JOIN).build();
+
         when(chatService.buildJoinMessage("real_user")).thenReturn(outbound);
+
         webSocketController.joinMessage(inbound, headerAccessor);
+
         verify(chatService).buildJoinMessage("real_user");
         verify(messagingTemplate).convertAndSend("/topic/public", outbound);
     }
@@ -57,7 +61,9 @@ class WebSocketControllerTest {
     void joinMessage_unauthenticatedRejected() {
         headerAccessor.setUser(null);
         ChatMessageDto inbound = ChatMessageDto.builder().sender("fake_user").type(MessageType.JOIN).build();
+
         webSocketController.joinMessage(inbound, headerAccessor);
+
         verifyNoInteractions(chatService);
         verifyNoInteractions(messagingTemplate);
     }
@@ -67,12 +73,33 @@ class WebSocketControllerTest {
     void sendMessage_derivesFromPrincipal() {
         when(principal.getName()).thenReturn("real_user");
         headerAccessor.setUser(principal);
+
         ChatMessageDto inbound = ChatMessageDto.builder().sender("fake_user").content("Hello").type(MessageType.CHAT).build();
         ChatMessageDto outbound = ChatMessageDto.builder().sender("real_user").content("Hello").type(MessageType.CHAT).build();
-        when(chatService.processAndSave("Hello", "real_user")).thenReturn(outbound);
+
+        when(chatService.processAndSave(null, "Hello", "real_user")).thenReturn(outbound);
+
         webSocketController.sendMessage(inbound, headerAccessor);
-        verify(chatService).processAndSave("Hello", "real_user");
+
+        verify(chatService).processAndSave(null, "Hello", "real_user");
         verify(messagingTemplate).convertAndSend("/topic/public", outbound);
+    }
+
+    @Test
+    @DisplayName("sendMessage — sends to conversation topic when conversationId is present")
+    void sendMessage_toConversationTopic() {
+        when(principal.getName()).thenReturn("real_user");
+        headerAccessor.setUser(principal);
+
+        ChatMessageDto inbound = ChatMessageDto.builder().conversationId(2L).sender("fake_user").content("Hello Direct").type(MessageType.CHAT).build();
+        ChatMessageDto outbound = ChatMessageDto.builder().conversationId(2L).sender("real_user").content("Hello Direct").type(MessageType.CHAT).build();
+
+        when(chatService.processAndSave(2L, "Hello Direct", "real_user")).thenReturn(outbound);
+
+        webSocketController.sendMessage(inbound, headerAccessor);
+
+        verify(chatService).processAndSave(2L, "Hello Direct", "real_user");
+        verify(messagingTemplate).convertAndSend("/topic/conversation.2", outbound);
     }
 
     @Test
@@ -80,9 +107,13 @@ class WebSocketControllerTest {
     void leaveMessage_derivesFromPrincipal() {
         when(principal.getName()).thenReturn("real_user");
         headerAccessor.setUser(principal);
+
         ChatMessageDto outbound = ChatMessageDto.builder().sender("real_user").type(MessageType.LEAVE).build();
+
         when(chatService.buildLeaveMessage("real_user")).thenReturn(outbound);
+
         webSocketController.leaveMessage(headerAccessor);
+
         verify(chatService).buildLeaveMessage("real_user");
         verify(messagingTemplate).convertAndSend("/topic/public", outbound);
     }

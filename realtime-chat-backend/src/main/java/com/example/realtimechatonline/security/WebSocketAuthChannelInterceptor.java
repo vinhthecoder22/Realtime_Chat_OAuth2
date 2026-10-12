@@ -13,12 +13,22 @@ import org.springframework.stereotype.Component;
 import com.example.realtimechatonline.security.jwt.JwtTokenProvider;
 import org.springframework.messaging.MessageDeliveryException;
 
+import com.example.realtimechatonline.repository.UserRepository;
+import com.example.realtimechatonline.repository.ConversationMemberRepository;
+import com.example.realtimechatonline.repository.ConversationRepository;
+import com.example.realtimechatonline.domain.entity.Conversation;
+import com.example.realtimechatonline.domain.entity.ConversationType;
+import com.example.realtimechatonline.domain.entity.User;
+
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 
     private final JwtTokenProvider tokenProvider;
+    private final UserRepository userRepository;
+    private final ConversationMemberRepository conversationMemberRepository;
+    private final ConversationRepository conversationRepository;
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
@@ -49,6 +59,33 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
                 log.warn("Kết nối WebSocket thất bại: Token không hợp lệ ({})", e.getMessage());
                 // Ném lỗi để Spring gửi STOMP ERROR frame về client
                 throw new MessageDeliveryException("INVALID_TOKEN");
+            }
+        } else if (accessor != null && StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
+            String destination = accessor.getDestination();
+            if (destination != null && destination.startsWith("/topic/conversation.")) {
+                try {
+                    Long conversationId = Long.parseLong(destination.substring("/topic/conversation.".length()));
+                    Authentication auth = (Authentication) accessor.getUser();
+                    if (auth == null) {
+                        throw new MessageDeliveryException("UNAUTHORIZED");
+                    }
+
+                    Conversation conversation = conversationRepository.findById(conversationId).orElse(null);
+                    if (conversation == null) {
+                        throw new MessageDeliveryException("INVALID_DESTINATION");
+                    }
+
+                    if (conversation.getType() == ConversationType.DIRECT) {
+                        User user = userRepository.findByUsername(auth.getName()).orElse(null);
+                        if (user == null || !conversationMemberRepository.existsByConversationIdAndUserId(conversationId, user.getId())) {
+                            log.warn("Subscribe bị từ chối: User {} không nằm trong conversation {}", auth.getName(), conversationId);
+                            throw new MessageDeliveryException("UNAUTHORIZED");
+                        }
+                    }
+
+                } catch (NumberFormatException e) {
+                    throw new MessageDeliveryException("INVALID_DESTINATION");
+                }
             }
         }
 
