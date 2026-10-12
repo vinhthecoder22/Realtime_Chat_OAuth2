@@ -153,6 +153,19 @@ public class GlobalExceptionHandlerImpl implements IGlobalExceptionHandler {
                 ));
     }
 
+    // 403 Forbidden
+
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDenied(org.springframework.security.access.AccessDeniedException e) {
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of(
+                        HttpStatus.FORBIDDEN.value(),
+                        "Forbidden",
+                        e.getMessage()
+                ));
+    }
+
     @Override
     @ExceptionHandler(ClientAbortException.class)
     public void handleClientAbortException(ClientAbortException e) {

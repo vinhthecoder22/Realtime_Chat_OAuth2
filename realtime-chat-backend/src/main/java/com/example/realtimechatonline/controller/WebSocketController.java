@@ -31,9 +31,13 @@ public class WebSocketController {
             return;
         }
 
-        // Delegate all business logic to service
-        ChatMessageDto outbound = chatService.processAndSave(inbound.getContent(), senderUsername);
-        messagingTemplate.convertAndSend("/topic/public", outbound);
+        ChatMessageDto outbound = chatService.processAndSave(inbound.getConversationId(), inbound.getContent(), senderUsername);
+
+        if (inbound.getConversationId() != null) {
+            messagingTemplate.convertAndSend("/topic/conversation." + inbound.getConversationId(), outbound);
+        } else {
+            messagingTemplate.convertAndSend("/topic/public", outbound);
+        }
     }
 
     @MessageMapping("/chat.addUser")

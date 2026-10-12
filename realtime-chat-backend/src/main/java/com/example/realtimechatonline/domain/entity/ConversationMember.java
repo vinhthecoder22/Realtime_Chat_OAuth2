@@ -37,4 +37,10 @@ public class ConversationMember {
 
     @Column(nullable = false)
     Instant joinedAt;
+
+    @Column(name = "last_read_message_id")
+    Long lastReadMessageId;
+
+    @Column(name = "last_read_at")
+    Instant lastReadAt;
 }
