@@ -10,6 +10,14 @@ import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBr
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
+import com.example.realtimechatonline.service.PresenceService;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
+import org.springframework.web.socket.handler.WebSocketHandlerDecorator;
+import org.springframework.web.socket.WebSocketHandler;
+import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.WebSocketMessage;
+
 import java.util.List;
 
 @Configuration
@@ -19,6 +27,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final WebSocketAuthChannelInterceptor webSocketAuthChannelInterceptor;
     private final AppProperties appProperties;
+    private final ObjectProvider<PresenceService> presenceServiceProvider;
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
@@ -53,5 +62,19 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
         registration.interceptors(webSocketAuthChannelInterceptor);
+    }
+
+    @Override
+    public void configureWebSocketTransport(WebSocketTransportRegistration registration) {
+        registration.addDecoratorFactory(handler -> new WebSocketHandlerDecorator(handler) {
+            @Override
+            public void handleMessage(WebSocketSession session, WebSocketMessage<?> message) throws Exception {
+                PresenceService presenceService = presenceServiceProvider.getIfAvailable();
+                if (presenceService != null && session != null) {
+                    presenceService.touchSession(session.getId());
+                }
+                super.handleMessage(session, message);
+            }
+        });
     }
 }

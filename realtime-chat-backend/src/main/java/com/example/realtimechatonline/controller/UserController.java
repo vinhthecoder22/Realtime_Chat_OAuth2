@@ -2,6 +2,8 @@ package com.example.realtimechatonline.controller;
 
 import com.example.realtimechatonline.common.ApiResponse;
 import com.example.realtimechatonline.domain.dto.response.UserProfileDto;
+import com.example.realtimechatonline.domain.dto.response.UserPresenceDto;
+import com.example.realtimechatonline.service.PresenceService;
 import com.example.realtimechatonline.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -13,12 +15,27 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/v1/users")
 @RequiredArgsConstructor
 public class UserController {
 
     private final UserService userService;
+    private final PresenceService presenceService;
+
+    @GetMapping("/presence")
+    public ResponseEntity<ApiResponse<List<UserPresenceDto>>> getUsersPresence(
+            @RequestParam(name = "usernames", required = false) List<String> usernames) {
+
+        List<UserPresenceDto> data = presenceService.getPresenceList(usernames);
+        return ResponseEntity.ok(ApiResponse.<List<UserPresenceDto>>builder()
+                .status(HttpStatus.OK)
+                .message("Presence retrieved successfully")
+                .data(data)
+                .build());
+    }
 
     @GetMapping("/search")
     public ResponseEntity<ApiResponse<Page<UserProfileDto>>> searchUsers(

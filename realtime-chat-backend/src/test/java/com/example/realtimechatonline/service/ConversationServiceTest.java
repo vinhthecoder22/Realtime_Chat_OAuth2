@@ -40,6 +40,7 @@ class ConversationServiceTest {
     @Mock FriendRequestRepository friendRequestRepository;
     @Mock UserMapper userMapper;
     @Mock org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
+    @Mock com.example.realtimechatonline.service.PresenceService presenceService;
 
     @InjectMocks ConversationServiceImpl conversationService;
 

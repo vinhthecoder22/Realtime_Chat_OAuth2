@@ -39,6 +39,8 @@ class WebSocketAuthChannelInterceptorTest {
     @Mock ConversationMemberRepository conversationMemberRepository;
     @Mock ConversationRepository conversationRepository;
     @Mock MessageChannel channel;
+    @Mock org.springframework.beans.factory.ObjectProvider<com.example.realtimechatonline.service.PresenceService> presenceServiceProvider;
+    @Mock com.example.realtimechatonline.service.PresenceService presenceService;
 
     @InjectMocks WebSocketAuthChannelInterceptor interceptor;
 
@@ -47,6 +49,7 @@ class WebSocketAuthChannelInterceptorTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(presenceServiceProvider.getIfAvailable()).thenReturn(presenceService);
         alice = User.builder().id(1L).username("alice").build();
         auth = new UsernamePasswordAuthenticationToken("alice", "cred", Collections.emptyList());
     }
@@ -139,5 +142,57 @@ class WebSocketAuthChannelInterceptorTest {
 
         Message<?> result = interceptor.preSend(message, channel);
         assertThat(result).isNotNull();
+    }
+
+    @Test
+    @DisplayName("SUBSCRIBE — /topic/presence throws UNAUTHORIZED when unauthenticated")
+    void subscribe_presenceTopic_unauthenticated_throwsUnauthorized() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setDestination("/topic/presence");
+        accessor.setUser(null);
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, channel))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessageContaining("UNAUTHORIZED");
+    }
+
+    @Test
+    @DisplayName("SUBSCRIBE — /topic/presence allowed when authenticated")
+    void subscribe_presenceTopic_authenticated_allowed() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setDestination("/topic/presence");
+        accessor.setUser(auth);
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        Message<?> result = interceptor.preSend(message, channel);
+        assertThat(result).isNotNull();
+    }
+
+    @Test
+    @DisplayName("SEND — client direct SEND to /topic/presence is rejected with FORBIDDEN")
+    void send_presenceTopic_rejected() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
+        accessor.setDestination("/topic/presence");
+        accessor.setUser(auth);
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, channel))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessageContaining("FORBIDDEN");
+    }
+
+    @Test
+    @DisplayName("preSend — touches session in PresenceService when sessionId is present")
+    void preSend_touchesSession() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
+        accessor.setDestination("/app/chat.sendMessage");
+        accessor.setSessionId("sess-xyz");
+        accessor.setUser(auth);
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        interceptor.preSend(message, channel);
+
+        verify(presenceService).touchSession("sess-xyz");
     }
 }

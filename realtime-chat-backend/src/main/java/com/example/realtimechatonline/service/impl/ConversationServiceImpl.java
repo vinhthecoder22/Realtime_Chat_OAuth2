@@ -13,6 +13,7 @@ import com.example.realtimechatonline.repository.FriendRequestRepository;
 import com.example.realtimechatonline.repository.MessageRepository;
 import com.example.realtimechatonline.repository.UserRepository;
 import com.example.realtimechatonline.service.ConversationService;
+import com.example.realtimechatonline.service.PresenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -40,6 +41,7 @@ public class ConversationServiceImpl implements ConversationService {
     private final FriendRequestRepository friendRequestRepository;
     private final UserMapper userMapper;
     private final SimpMessagingTemplate messagingTemplate;
+    private final PresenceService presenceService;
 
     @Override
     @Transactional
@@ -103,12 +105,18 @@ public class ConversationServiceImpl implements ConversationService {
                 ? targetUser.getFullname()
                 : targetUser.getUsername();
 
+        UserProfileDto otherUserProfile = userMapper.toUserProfile(targetUser);
+        if (otherUserProfile != null && presenceService != null) {
+            otherUserProfile.setIsOnline(presenceService.isUserOnline(otherUserProfile.getUsername()));
+            otherUserProfile.setLastSeenAt(presenceService.getLastSeenAt(otherUserProfile.getUsername()));
+        }
+
         return ConversationDto.builder()
                 .id(conversation.getId())
                 .type(conversation.getType())
                 .name(displayName)
                 .avatar(targetUser.getPicture())
-                .otherUser(userMapper.toUserProfile(targetUser))
+                .otherUser(otherUserProfile)
                 .lastMessage(latestMsg != null ? latestMsg.getContent() : null)
                 .lastMessageSender(latestMsg != null && latestMsg.getSender() != null ? latestMsg.getSender().getUsername() : null)
                 .lastMessageTimestamp(latestMsg != null ? latestMsg.getTimestamp() : null)
@@ -186,6 +194,10 @@ public class ConversationServiceImpl implements ConversationService {
             }
 
             UserProfileDto otherUserProfile = otherUser != null ? userMapper.toUserProfile(otherUser) : null;
+            if (otherUserProfile != null && presenceService != null) {
+                otherUserProfile.setIsOnline(presenceService.isUserOnline(otherUserProfile.getUsername()));
+                otherUserProfile.setLastSeenAt(presenceService.getLastSeenAt(otherUserProfile.getUsername()));
+            }
             Message latestMsg = latestMessageMap.get(conversation.getId());
 
             String displayName;
@@ -255,6 +267,10 @@ public class ConversationServiceImpl implements ConversationService {
         }
 
         UserProfileDto otherUserProfile = otherUser != null ? userMapper.toUserProfile(otherUser) : null;
+        if (otherUserProfile != null && presenceService != null) {
+            otherUserProfile.setIsOnline(presenceService.isUserOnline(otherUserProfile.getUsername()));
+            otherUserProfile.setLastSeenAt(presenceService.getLastSeenAt(otherUserProfile.getUsername()));
+        }
         Optional<Message> latestMsgOpt = messageRepository.findLatestMessageByConversationId(conversation.getId());
         Message latestMsg = latestMsgOpt.orElse(null);
 

@@ -19,6 +19,8 @@ import com.example.realtimechatonline.repository.ConversationRepository;
 import com.example.realtimechatonline.domain.entity.Conversation;
 import com.example.realtimechatonline.domain.entity.ConversationType;
 import com.example.realtimechatonline.domain.entity.User;
+import com.example.realtimechatonline.service.PresenceService;
+import org.springframework.beans.factory.ObjectProvider;
 
 @Slf4j
 @Component
@@ -29,12 +31,20 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
     private final UserRepository userRepository;
     private final ConversationMemberRepository conversationMemberRepository;
     private final ConversationRepository conversationRepository;
+    private final ObjectProvider<PresenceService> presenceServiceProvider;
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
 
         StompHeaderAccessor accessor =
                 MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+
+        if (accessor != null && accessor.getSessionId() != null) {
+            PresenceService presenceService = presenceServiceProvider.getIfAvailable();
+            if (presenceService != null) {
+                presenceService.touchSession(accessor.getSessionId());
+            }
+        }
 
         if (accessor != null && StompCommand.CONNECT.equals(accessor.getCommand())) {
             String authHeader = accessor.getFirstNativeHeader("Authorization");
@@ -86,6 +96,18 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
                 } catch (NumberFormatException e) {
                     throw new MessageDeliveryException("INVALID_DESTINATION");
                 }
+            } else if (destination != null && (destination.equals("/topic/presence") || destination.startsWith("/topic/presence"))) {
+                Authentication auth = (Authentication) accessor.getUser();
+                if (auth == null) {
+                    log.warn("Subscribe /topic/presence rejected: Unauthenticated");
+                    throw new MessageDeliveryException("UNAUTHORIZED");
+                }
+            }
+        } else if (accessor != null && StompCommand.SEND.equals(accessor.getCommand())) {
+            String destination = accessor.getDestination();
+            if (destination != null && (destination.equals("/topic/presence") || destination.startsWith("/topic/presence"))) {
+                log.warn("Direct SEND to /topic/presence rejected from client");
+                throw new MessageDeliveryException("FORBIDDEN");
             }
         }
 
