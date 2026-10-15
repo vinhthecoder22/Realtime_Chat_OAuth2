@@ -35,8 +35,16 @@ public class ConversationMember {
     @Builder.Default
     ConversationMemberRole role = ConversationMemberRole.MEMBER;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    ConversationMemberStatus status = ConversationMemberStatus.ACTIVE;
+
     @Column(nullable = false)
     Instant joinedAt;
+
+    @Column(name = "left_at")
+    Instant leftAt;
 
     @Column(name = "last_read_message_id")
     Long lastReadMessageId;

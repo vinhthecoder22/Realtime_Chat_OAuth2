@@ -42,7 +42,8 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
             "WHERE m.conversation.id IN :conversationIds " +
             "  AND m.sender.id <> :userId " +
             "  AND ( " +
-            "       (c.type = com.example.realtimechatonline.domain.entity.ConversationType.DIRECT AND (cm.lastReadMessageId IS NULL OR m.id > cm.lastReadMessageId)) " +
+            "       (c.type = com.example.realtimechatonline.domain.entity.ConversationType.DIRECT AND (cm.id IS NULL OR cm.status = com.example.realtimechatonline.domain.entity.ConversationMemberStatus.ACTIVE) AND (cm.lastReadMessageId IS NULL OR m.id > cm.lastReadMessageId)) " +
+            "    OR (c.type = com.example.realtimechatonline.domain.entity.ConversationType.GROUP AND cm.id IS NOT NULL AND cm.status = com.example.realtimechatonline.domain.entity.ConversationMemberStatus.ACTIVE AND (cm.lastReadMessageId IS NULL OR m.id > cm.lastReadMessageId)) " +
             "    OR (c.type = com.example.realtimechatonline.domain.entity.ConversationType.PUBLIC AND cm.id IS NOT NULL AND cm.lastReadMessageId IS NOT NULL AND m.id > cm.lastReadMessageId) " +
             "  ) " +
             "GROUP BY m.conversation.id")
@@ -55,7 +56,8 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
             "WHERE m.conversation.id = :conversationId " +
             "  AND m.sender.id <> :userId " +
             "  AND ( " +
-            "       (c.type = com.example.realtimechatonline.domain.entity.ConversationType.DIRECT AND (cm.lastReadMessageId IS NULL OR m.id > cm.lastReadMessageId)) " +
+            "       (c.type = com.example.realtimechatonline.domain.entity.ConversationType.DIRECT AND (cm.id IS NULL OR cm.status = com.example.realtimechatonline.domain.entity.ConversationMemberStatus.ACTIVE) AND (cm.lastReadMessageId IS NULL OR m.id > cm.lastReadMessageId)) " +
+            "    OR (c.type = com.example.realtimechatonline.domain.entity.ConversationType.GROUP AND cm.id IS NOT NULL AND cm.status = com.example.realtimechatonline.domain.entity.ConversationMemberStatus.ACTIVE AND (cm.lastReadMessageId IS NULL OR m.id > cm.lastReadMessageId)) " +
             "    OR (c.type = com.example.realtimechatonline.domain.entity.ConversationType.PUBLIC AND cm.id IS NOT NULL AND cm.lastReadMessageId IS NOT NULL AND m.id > cm.lastReadMessageId) " +
             "  )")
     long countUnreadMessages(@Param("conversationId") Long conversationId, @Param("userId") Long userId);

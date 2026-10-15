@@ -7,9 +7,7 @@ import lombok.experimental.FieldDefaults;
 import java.time.Instant;
 
 @Entity
-@Table(name = "conversations", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_conversation_type_name", columnNames = {"type", "name"})
-})
+@Table(name = "conversations")
 @AllArgsConstructor
 @NoArgsConstructor
 @Getter
@@ -28,6 +26,13 @@ public class Conversation {
 
     @Column(length = 100)
     String name;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "creator_id")
+    User creator;
+
+    @Column(length = 255)
+    String avatar;
 
     @Column(nullable = false)
     Instant createdAt;

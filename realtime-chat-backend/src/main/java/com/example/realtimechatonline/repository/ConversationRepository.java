@@ -1,6 +1,7 @@
 package com.example.realtimechatonline.repository;
 
 import com.example.realtimechatonline.domain.entity.Conversation;
+import com.example.realtimechatonline.domain.entity.ConversationMemberStatus;
 import com.example.realtimechatonline.domain.entity.ConversationType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -16,17 +17,28 @@ import java.util.Optional;
 public interface ConversationRepository extends JpaRepository<Conversation, Long> {
     Optional<Conversation> findByTypeAndName(ConversationType type, String name);
 
-    @Query("SELECT c FROM Conversation c JOIN ConversationMember cm ON c.id = cm.conversation.id WHERE cm.user.id = :userId")
+    @Query("SELECT c FROM Conversation c JOIN ConversationMember cm ON c.id = cm.conversation.id WHERE cm.user.id = :userId AND cm.status = com.example.realtimechatonline.domain.entity.ConversationMemberStatus.ACTIVE")
     List<Conversation> findAllByUserId(@Param("userId") Long userId);
+
+    @Query("SELECT c FROM Conversation c JOIN ConversationMember cm ON c.id = cm.conversation.id WHERE cm.user.id = :userId AND cm.status = :status")
+    List<Conversation> findAllByUserIdAndStatus(@Param("userId") Long userId, @Param("status") ConversationMemberStatus status);
 
     @Query(value = "SELECT c FROM Conversation c " +
             "LEFT JOIN Message m ON m.conversation.id = c.id " +
             "WHERE c.type = com.example.realtimechatonline.domain.entity.ConversationType.PUBLIC " +
-            "   OR c.id IN (SELECT cm.conversation.id FROM ConversationMember cm WHERE cm.user.id = :userId) " +
+            "   OR c.id IN (" +
+            "       SELECT cm.conversation.id FROM ConversationMember cm " +
+            "       WHERE cm.user.id = :userId " +
+            "         AND cm.status = com.example.realtimechatonline.domain.entity.ConversationMemberStatus.ACTIVE" +
+            "   ) " +
             "GROUP BY c.id, c.type, c.name, c.createdAt " +
             "ORDER BY COALESCE(MAX(m.timestamp), c.createdAt) DESC, c.id DESC",
             countQuery = "SELECT COUNT(c) FROM Conversation c " +
                     "WHERE c.type = com.example.realtimechatonline.domain.entity.ConversationType.PUBLIC " +
-                    "   OR c.id IN (SELECT cm.conversation.id FROM ConversationMember cm WHERE cm.user.id = :userId)")
+                    "   OR c.id IN (" +
+                    "       SELECT cm.conversation.id FROM ConversationMember cm " +
+                    "       WHERE cm.user.id = :userId " +
+                    "         AND cm.status = com.example.realtimechatonline.domain.entity.ConversationMemberStatus.ACTIVE" +
+                    "   )")
     Page<Conversation> findUserConversationsOrderByLastActivity(@Param("userId") Long userId, Pageable pageable);
 }
