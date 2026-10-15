@@ -30,6 +30,8 @@ public interface IGlobalExceptionHandler {
 
     ResponseEntity<ErrorResponse> handleNumberFormat(NumberFormatException e);
 
+    ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException e);
+
     ResponseEntity<ErrorResponse> handleJwtException(JwtException e);
 
     ResponseEntity<ErrorResponse> handleBadCredentials(BadCredentialsException e);

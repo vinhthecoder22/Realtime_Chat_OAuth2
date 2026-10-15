@@ -1,5 +1,6 @@
 package com.example.realtimechatonline.domain.dto.response;
 
+import com.example.realtimechatonline.domain.entity.ConversationMemberRole;
 import com.example.realtimechatonline.domain.entity.ConversationType;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
@@ -29,4 +30,7 @@ public class ConversationDto {
     Long unreadCount = 0L;
     Long lastReadMessageId;
     Long otherLastReadMessageId;
+    Long memberCount;
+    ConversationMemberRole currentUserRole;
+
 }

@@ -129,6 +129,18 @@ public class GlobalExceptionHandlerImpl implements IGlobalExceptionHandler {
                 ));
     }
 
+    @Override
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of(
+                        HttpStatus.BAD_REQUEST.value(),
+                        "Bad Request",
+                        e.getMessage()
+                ));
+    }
+
     // 401 Unauthorized
 
     @ExceptionHandler(JwtException.class)

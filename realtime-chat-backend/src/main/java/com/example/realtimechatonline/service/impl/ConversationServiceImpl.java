@@ -1,6 +1,8 @@
 package com.example.realtimechatonline.service.impl;
 
+import com.example.realtimechatonline.domain.dto.request.*;
 import com.example.realtimechatonline.domain.dto.response.ConversationDto;
+import com.example.realtimechatonline.domain.dto.response.GroupMemberResponseDto;
 import com.example.realtimechatonline.domain.dto.response.ReadReceiptResponseDto;
 import com.example.realtimechatonline.domain.dto.response.UserProfileDto;
 import com.example.realtimechatonline.domain.dto.websocket.UserEventDto;
@@ -171,14 +173,23 @@ public class ConversationServiceImpl implements ConversationService {
                 conversationMemberRepository.findByConversationIdIn(directConvIds).stream()
                         .collect(Collectors.groupingBy(cm -> cm.getConversation().getId()));
 
+        // Batch fetch members for currentUser across all conversations
+        Map<Long, ConversationMember> currentUserMembersMap = conversationMemberRepository.findByUserIdAndConversationIdIn(currentUser.getId(), convIds)
+                .stream().collect(Collectors.toMap(cm -> cm.getConversation().getId(), cm -> cm, (cm1, cm2) -> cm1));
+
+        // Batch fetch active member counts for all conversations
+        List<Object[]> memberCountsRaw = conversationMemberRepository.countMembersByConversationIdInAndStatus(convIds, ConversationMemberStatus.ACTIVE);
+        Map<Long, Long> memberCountMap = memberCountsRaw.stream()
+                .collect(Collectors.toMap(row -> (Long) row[0], row -> (Long) row[1]));
+
         // 3. Batch fetch unread counts for all conversations
         List<Object[]> unreadCountsRaw = messageRepository.countUnreadMessagesByConversationIds(convIds, currentUser.getId());
         Map<Long, Long> unreadCountMap = unreadCountsRaw.stream()
                 .collect(Collectors.toMap(row -> (Long) row[0], row -> (Long) row[1]));
 
         List<ConversationDto> dtos = conversations.stream().map(conversation -> {
+            ConversationMember currentMember = currentUserMembersMap.get(conversation.getId());
             User otherUser = null;
-            ConversationMember currentMember = null;
             ConversationMember otherMember = null;
 
             if (conversation.getType() == ConversationType.DIRECT) {
@@ -202,6 +213,9 @@ public class ConversationServiceImpl implements ConversationService {
 
             String displayName;
             String avatar = null;
+            Long memberCount = null;
+            ConversationMemberRole currentUserRole = null;
+
             if (conversation.getType() == ConversationType.DIRECT) {
                 if (otherUserProfile != null) {
                     displayName = (otherUserProfile.getFullname() != null && !otherUserProfile.getFullname().isBlank())
@@ -211,6 +225,13 @@ public class ConversationServiceImpl implements ConversationService {
                 } else {
                     displayName = "Unknown User";
                 }
+            } else if (conversation.getType() == ConversationType.GROUP) {
+                displayName = (conversation.getName() != null && !conversation.getName().isBlank())
+                        ? conversation.getName()
+                        : "Group Chat";
+                avatar = conversation.getAvatar();
+                memberCount = memberCountMap.getOrDefault(conversation.getId(), 0L);
+                currentUserRole = currentMember != null ? currentMember.getRole() : null;
             } else {
                 displayName = "Global Chat";
             }
@@ -230,6 +251,8 @@ public class ConversationServiceImpl implements ConversationService {
                     .lastActivityAt(lastActivity)
                     .createdAt(conversation.getCreatedAt())
                     .unreadCount(unread)
+                    .memberCount(memberCount)
+                    .currentUserRole(currentUserRole)
                     .lastReadMessageId(currentMember != null ? currentMember.getLastReadMessageId() : null)
                     .otherLastReadMessageId(otherMember != null ? otherMember.getLastReadMessageId() : null)
                     .build();
@@ -264,6 +287,13 @@ public class ConversationServiceImpl implements ConversationService {
                     otherUser = member.getUser();
                 }
             }
+        } else if (conversation.getType() == ConversationType.GROUP) {
+            currentMember = conversationMemberRepository.findByConversationIdAndUserIdAndStatus(
+                            conversation.getId(), currentUser.getId(), ConversationMemberStatus.ACTIVE)
+                    .orElseThrow(() -> new AccessDeniedException("User is not an active member of this group"));
+        } else {
+            // PUBLIC
+            currentMember = conversationMemberRepository.findByConversationIdAndUserId(conversation.getId(), currentUser.getId()).orElse(null);
         }
 
         UserProfileDto otherUserProfile = otherUser != null ? userMapper.toUserProfile(otherUser) : null;
@@ -276,6 +306,9 @@ public class ConversationServiceImpl implements ConversationService {
 
         String displayName;
         String avatar = null;
+        Long memberCount = null;
+        ConversationMemberRole currentUserRole = null;
+
         if (conversation.getType() == ConversationType.DIRECT) {
             if (otherUserProfile != null) {
                 displayName = (otherUserProfile.getFullname() != null && !otherUserProfile.getFullname().isBlank())
@@ -285,6 +318,13 @@ public class ConversationServiceImpl implements ConversationService {
             } else {
                 displayName = "Unknown User";
             }
+        } else if (conversation.getType() == ConversationType.GROUP) {
+            displayName = (conversation.getName() != null && !conversation.getName().isBlank())
+                    ? conversation.getName()
+                    : "Group Chat";
+            avatar = conversation.getAvatar();
+            memberCount = conversationMemberRepository.countByConversationIdAndStatus(conversation.getId(), ConversationMemberStatus.ACTIVE);
+            currentUserRole = currentMember != null ? currentMember.getRole() : null;
         } else {
             displayName = "Global Chat";
         }
@@ -304,6 +344,8 @@ public class ConversationServiceImpl implements ConversationService {
                 .lastActivityAt(lastActivity)
                 .createdAt(conversation.getCreatedAt())
                 .unreadCount(unread)
+                .memberCount(memberCount)
+                .currentUserRole(currentUserRole)
                 .lastReadMessageId(currentMember != null ? currentMember.getLastReadMessageId() : null)
                 .otherLastReadMessageId(otherMember != null ? otherMember.getLastReadMessageId() : null)
                 .build();
@@ -321,6 +363,10 @@ public class ConversationServiceImpl implements ConversationService {
         if (conversation.getType() == ConversationType.DIRECT) {
             if (!conversationMemberRepository.existsByConversationIdAndUserId(conversation.getId(), currentUser.getId())) {
                 throw new AccessDeniedException("User is not a member of this direct conversation");
+            }
+        } else if (conversation.getType() == ConversationType.GROUP) {
+            if (!conversationMemberRepository.existsByConversationIdAndUserIdAndStatus(conversation.getId(), currentUser.getId(), ConversationMemberStatus.ACTIVE)) {
+                throw new AccessDeniedException("User is not an active member of this group");
             }
         }
 
@@ -418,5 +464,397 @@ public class ConversationServiceImpl implements ConversationService {
             }
             messagingTemplate.convertAndSend("/topic/conversation." + conversation.getId(), event);
         }
+    }
+
+    @Override
+    @Transactional
+    public ConversationDto createGroupConversation(CreateGroupRequestDto request, String currentUsername) {
+        User currentUser = userRepository.findByUsername(currentUsername)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        if (request == null) {
+            throw new IllegalArgumentException("Request body cannot be null");
+        }
+
+        String groupName = request.getName() != null ? request.getName().trim() : "";
+        if (groupName.isEmpty() || groupName.length() > 100) {
+            throw new IllegalArgumentException("Group name must be between 1 and 100 characters");
+        }
+
+        List<Long> memberUserIds = request.getMemberUserIds();
+        if (memberUserIds == null || memberUserIds.isEmpty()) {
+            throw new IllegalArgumentException("memberUserIds must not be empty");
+        }
+
+        Set<Long> uniqueMemberIds = new LinkedHashSet<>(memberUserIds);
+        if (uniqueMemberIds.contains(currentUser.getId())) {
+            throw new IllegalArgumentException("Cannot add yourself to member list");
+        }
+
+        List<User> invitedUsers = new ArrayList<>();
+        for (Long memberId : uniqueMemberIds) {
+            if (memberId == null || memberId <= 0) {
+                throw new IllegalArgumentException("Invalid user ID: " + memberId);
+            }
+            User memberUser = userRepository.findById(memberId)
+                    .orElseThrow(() -> new ResourceNotFoundException("User not found: " + memberId));
+
+            if (!areFriends(currentUser, memberUser)) {
+                throw new IllegalArgumentException("User " + memberUser.getUsername() + " is not your friend");
+            }
+            invitedUsers.add(memberUser);
+        }
+
+        Conversation conversation = Conversation.builder()
+                .type(ConversationType.GROUP)
+                .name(groupName)
+                .creator(currentUser)
+                .createdAt(Instant.now())
+                .build();
+        conversation = conversationRepository.save(conversation);
+
+        Instant now = Instant.now();
+        List<ConversationMember> membersToSave = new ArrayList<>();
+
+        ConversationMember adminMember = ConversationMember.builder()
+                .conversation(conversation)
+                .user(currentUser)
+                .role(ConversationMemberRole.ADMIN)
+                .status(ConversationMemberStatus.ACTIVE)
+                .joinedAt(now)
+                .build();
+        membersToSave.add(adminMember);
+
+        for (User invitedUser : invitedUsers) {
+            ConversationMember member = ConversationMember.builder()
+                    .conversation(conversation)
+                    .user(invitedUser)
+                    .role(ConversationMemberRole.MEMBER)
+                    .status(ConversationMemberStatus.ACTIVE)
+                    .joinedAt(now)
+                    .build();
+            membersToSave.add(member);
+        }
+
+        conversationMemberRepository.saveAll(membersToSave);
+
+        return ConversationDto.builder()
+                .id(conversation.getId())
+                .type(conversation.getType())
+                .name(conversation.getName())
+                .avatar(conversation.getAvatar())
+                .createdAt(conversation.getCreatedAt())
+                .lastActivityAt(conversation.getCreatedAt())
+                .unreadCount(0L)
+                .memberCount((long) membersToSave.size())
+                .currentUserRole(ConversationMemberRole.ADMIN)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<GroupMemberResponseDto> getGroupMembers(Long conversationId, String currentUsername) {
+        User currentUser = userRepository.findByUsername(currentUsername)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Conversation not found"));
+
+        if (conversation.getType() != ConversationType.GROUP) {
+            throw new IllegalArgumentException("Conversation is not a group");
+        }
+
+        boolean isActive = conversationMemberRepository.existsByConversationIdAndUserIdAndStatus(
+                conversationId, currentUser.getId(), ConversationMemberStatus.ACTIVE);
+        if (!isActive) {
+            throw new AccessDeniedException("User is not an active member of this group");
+        }
+
+        List<ConversationMember> members = conversationMemberRepository.findActiveMembersWithUser(
+                conversationId, ConversationMemberStatus.ACTIVE);
+
+        return members.stream().map(cm -> {
+            User u = cm.getUser();
+            boolean isOnline = presenceService != null && presenceService.isUserOnline(u.getUsername());
+            Instant lastSeenAt = presenceService != null ? presenceService.getLastSeenAt(u.getUsername()) : null;
+            return GroupMemberResponseDto.builder()
+                    .userId(u.getId())
+                    .username(u.getUsername())
+                    .fullname(u.getFullname())
+                    .picture(u.getPicture())
+                    .role(cm.getRole())
+                    .isOnline(isOnline)
+                    .lastSeenAt(lastSeenAt)
+                    .joinedAt(cm.getJoinedAt())
+                    .build();
+        }).toList();
+    }
+
+    @Override
+    @Transactional
+    public List<GroupMemberResponseDto> addGroupMembers(Long conversationId, AddGroupMembersRequestDto request, String currentUsername) {
+        User currentUser = userRepository.findByUsername(currentUsername)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Conversation not found"));
+
+        if (conversation.getType() != ConversationType.GROUP) {
+            throw new IllegalArgumentException("Conversation is not a group");
+        }
+
+        ConversationMember callerMember = conversationMemberRepository.findByConversationIdAndUserIdAndStatus(
+                        conversationId, currentUser.getId(), ConversationMemberStatus.ACTIVE)
+                .orElseThrow(() -> new AccessDeniedException("User is not an active member of this group"));
+
+        if (callerMember.getRole() != ConversationMemberRole.ADMIN) {
+            throw new AccessDeniedException("Only group ADMIN can add members");
+        }
+
+        if (request == null || request.getMemberUserIds() == null || request.getMemberUserIds().isEmpty()) {
+            throw new IllegalArgumentException("memberUserIds must not be empty");
+        }
+
+        Set<Long> uniqueIds = new LinkedHashSet<>(request.getMemberUserIds());
+        if (uniqueIds.contains(currentUser.getId())) {
+            throw new IllegalArgumentException("Cannot add yourself");
+        }
+
+        Optional<Message> latestMsgOpt = messageRepository.findLatestMessageByConversationId(conversationId);
+        Long latestMsgId = latestMsgOpt.map(Message::getId).orElse(null);
+        Instant now = Instant.now();
+
+        for (Long targetUserId : uniqueIds) {
+            if (targetUserId == null || targetUserId <= 0) {
+                throw new IllegalArgumentException("Invalid user ID: " + targetUserId);
+            }
+            User targetUser = userRepository.findById(targetUserId)
+                    .orElseThrow(() -> new ResourceNotFoundException("User not found: " + targetUserId));
+
+            if (!areFriends(currentUser, targetUser)) {
+                throw new IllegalArgumentException("User " + targetUser.getUsername() + " is not your friend");
+            }
+
+            Optional<ConversationMember> existingOpt = conversationMemberRepository.findByConversationIdAndUserId(conversationId, targetUserId);
+            if (existingOpt.isPresent()) {
+                ConversationMember existing = existingOpt.get();
+                if (existing.getStatus() == ConversationMemberStatus.ACTIVE) {
+                    throw new IllegalArgumentException("User " + targetUser.getUsername() + " is already an active member of this group");
+                }
+                // Reactivate member
+                existing.setStatus(ConversationMemberStatus.ACTIVE);
+                existing.setRole(ConversationMemberRole.MEMBER);
+                existing.setJoinedAt(now);
+                existing.setLeftAt(null);
+                existing.setLastReadMessageId(latestMsgId);
+                existing.setLastReadAt(now);
+                conversationMemberRepository.save(existing);
+            } else {
+                // New member
+                ConversationMember newMember = ConversationMember.builder()
+                        .conversation(conversation)
+                        .user(targetUser)
+                        .role(ConversationMemberRole.MEMBER)
+                        .status(ConversationMemberStatus.ACTIVE)
+                        .joinedAt(now)
+                        .lastReadMessageId(latestMsgId)
+                        .lastReadAt(now)
+                        .build();
+                conversationMemberRepository.save(newMember);
+            }
+        }
+
+        return getGroupMembers(conversationId, currentUsername);
+    }
+
+    @Override
+    @Transactional
+    public void removeGroupMember(Long conversationId, Long targetUserId, String currentUsername) {
+        User currentUser = userRepository.findByUsername(currentUsername)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Conversation not found"));
+
+        if (conversation.getType() != ConversationType.GROUP) {
+            throw new IllegalArgumentException("Conversation is not a group");
+        }
+
+        ConversationMember callerMember = conversationMemberRepository.findByConversationIdAndUserIdAndStatus(
+                        conversationId, currentUser.getId(), ConversationMemberStatus.ACTIVE)
+                .orElseThrow(() -> new AccessDeniedException("User is not an active member of this group"));
+
+        if (callerMember.getRole() != ConversationMemberRole.ADMIN) {
+            throw new AccessDeniedException("Only group ADMIN can remove members");
+        }
+
+        if (targetUserId.equals(currentUser.getId())) {
+            throw new IllegalArgumentException("ADMIN cannot remove themselves. Use leave endpoint instead");
+        }
+
+        ConversationMember targetMember = conversationMemberRepository.findByConversationIdAndUserIdAndStatus(
+                        conversationId, targetUserId, ConversationMemberStatus.ACTIVE)
+                .orElseThrow(() -> new ResourceNotFoundException("Active member not found: " + targetUserId));
+
+        targetMember.setStatus(ConversationMemberStatus.REMOVED);
+        targetMember.setLeftAt(Instant.now());
+        conversationMemberRepository.save(targetMember);
+    }
+
+    @Override
+    @Transactional
+    public void leaveGroup(Long conversationId, LeaveGroupRequestDto request, String currentUsername) {
+        User currentUser = userRepository.findByUsername(currentUsername)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Conversation not found"));
+
+        if (conversation.getType() != ConversationType.GROUP) {
+            throw new IllegalArgumentException("Conversation is not a group");
+        }
+
+        ConversationMember callerMember = conversationMemberRepository.findByConversationIdAndUserIdAndStatus(
+                        conversationId, currentUser.getId(), ConversationMemberStatus.ACTIVE)
+                .orElseThrow(() -> new AccessDeniedException("User is not an active member of this group"));
+
+        Instant now = Instant.now();
+
+        if (callerMember.getRole() == ConversationMemberRole.ADMIN) {
+            List<ConversationMember> otherActiveMembers = conversationMemberRepository.findOtherActiveMembersOrderedByJoinedAt(
+                    conversationId, currentUser.getId(), ConversationMemberStatus.ACTIVE);
+
+            if (!otherActiveMembers.isEmpty()) {
+                Long newAdminUserId = request != null ? request.getNewAdminUserId() : null;
+                ConversationMember newAdminMember;
+                if (newAdminUserId != null) {
+                    if (newAdminUserId.equals(currentUser.getId())) {
+                        throw new IllegalArgumentException("Cannot transfer admin to yourself");
+                    }
+                    newAdminMember = conversationMemberRepository.findByConversationIdAndUserIdAndStatus(
+                                    conversationId, newAdminUserId, ConversationMemberStatus.ACTIVE)
+                            .orElseThrow(() -> new IllegalArgumentException("Target user is not an active member of this group"));
+                } else {
+                    newAdminMember = otherActiveMembers.get(0);
+                }
+                newAdminMember.setRole(ConversationMemberRole.ADMIN);
+                conversationMemberRepository.save(newAdminMember);
+            }
+        }
+
+        callerMember.setStatus(ConversationMemberStatus.LEFT);
+        callerMember.setRole(ConversationMemberRole.MEMBER);
+        callerMember.setLeftAt(now);
+        conversationMemberRepository.save(callerMember);
+    }
+
+    @Override
+    @Transactional
+    public void transferAdmin(Long conversationId, TransferAdminRequestDto request, String currentUsername) {
+        User currentUser = userRepository.findByUsername(currentUsername)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Conversation not found"));
+
+        if (conversation.getType() != ConversationType.GROUP) {
+            throw new IllegalArgumentException("Conversation is not a group");
+        }
+
+        ConversationMember callerMember = conversationMemberRepository.findByConversationIdAndUserIdAndStatus(
+                        conversationId, currentUser.getId(), ConversationMemberStatus.ACTIVE)
+                .orElseThrow(() -> new AccessDeniedException("User is not an active member of this group"));
+
+        if (callerMember.getRole() != ConversationMemberRole.ADMIN) {
+            throw new AccessDeniedException("Only group ADMIN can transfer admin role");
+        }
+
+        if (request == null || request.getNewAdminUserId() == null) {
+            throw new IllegalArgumentException("newAdminUserId is required");
+        }
+
+        if (request.getNewAdminUserId().equals(currentUser.getId())) {
+            throw new IllegalArgumentException("Cannot transfer admin to yourself");
+        }
+
+        ConversationMember targetMember = conversationMemberRepository.findByConversationIdAndUserIdAndStatus(
+                        conversationId, request.getNewAdminUserId(), ConversationMemberStatus.ACTIVE)
+                .orElseThrow(() -> new IllegalArgumentException("Target user is not an active member of this group"));
+
+        targetMember.setRole(ConversationMemberRole.ADMIN);
+        callerMember.setRole(ConversationMemberRole.MEMBER);
+        conversationMemberRepository.saveAll(List.of(targetMember, callerMember));
+    }
+
+    @Override
+    @Transactional
+    public ConversationDto updateGroup(Long conversationId, UpdateGroupRequestDto request, String currentUsername) {
+        User currentUser = userRepository.findByUsername(currentUsername)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Conversation not found"));
+
+        if (conversation.getType() != ConversationType.GROUP) {
+            throw new IllegalArgumentException("Conversation is not a group");
+        }
+
+        ConversationMember callerMember = conversationMemberRepository.findByConversationIdAndUserIdAndStatus(
+                        conversationId, currentUser.getId(), ConversationMemberStatus.ACTIVE)
+                .orElseThrow(() -> new AccessDeniedException("User is not an active member of this group"));
+
+        if (callerMember.getRole() != ConversationMemberRole.ADMIN) {
+            throw new AccessDeniedException("Only group ADMIN can update group info");
+        }
+
+        if (request != null) {
+            if (request.getName() != null) {
+                String trimmed = request.getName().trim();
+                if (trimmed.isEmpty() || trimmed.length() > 100) {
+                    throw new IllegalArgumentException("Group name must be between 1 and 100 characters");
+                }
+                conversation.setName(trimmed);
+            }
+            if (request.getAvatar() != null) {
+                String avatar = request.getAvatar().trim();
+                if (avatar.length() > 255) {
+                    throw new IllegalArgumentException("Avatar URL must not exceed 255 characters");
+                }
+                conversation.setAvatar(avatar.isEmpty() ? null : avatar);
+            }
+        }
+        conversation = conversationRepository.save(conversation);
+
+        long memberCount = conversationMemberRepository.countByConversationIdAndStatus(conversationId, ConversationMemberStatus.ACTIVE);
+        Optional<Message> latestMsgOpt = messageRepository.findLatestMessageByConversationId(conversationId);
+        Message latestMsg = latestMsgOpt.orElse(null);
+        long unreadCount = messageRepository.countUnreadMessages(conversationId, currentUser.getId());
+
+        return ConversationDto.builder()
+                .id(conversation.getId())
+                .type(conversation.getType())
+                .name(conversation.getName())
+                .avatar(conversation.getAvatar())
+                .lastMessage(latestMsg != null ? latestMsg.getContent() : null)
+                .lastMessageSender(latestMsg != null && latestMsg.getSender() != null ? latestMsg.getSender().getUsername() : null)
+                .lastMessageTimestamp(latestMsg != null ? latestMsg.getTimestamp() : null)
+                .lastActivityAt(latestMsg != null ? latestMsg.getTimestamp() : conversation.getCreatedAt())
+                .createdAt(conversation.getCreatedAt())
+                .unreadCount(unreadCount)
+                .memberCount(memberCount)
+                .currentUserRole(callerMember.getRole())
+                .lastReadMessageId(callerMember.getLastReadMessageId())
+                .build();
+    }
+
+    private boolean areFriends(User u1, User u2) {
+        if (u1.getId().equals(u2.getId())) {
+            return false;
+        }
+        User first = u1.getId() < u2.getId() ? u1 : u2;
+        User second = u1.getId() > u2.getId() ? u1 : u2;
+        return friendRequestRepository.findByUser1AndUser2(first, second)
+                .map(fr -> fr.getStatus() == FriendRequestStatus.ACCEPTED)
+                .orElse(false);
     }
 }

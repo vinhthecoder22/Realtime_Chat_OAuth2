@@ -114,4 +114,139 @@ class ConversationControllerTest {
         assertThat(response.getBody().getData().getLastReadMessageId()).isEqualTo(55L);
         assertThat(response.getBody().getData().getUnreadCount()).isEqualTo(0L);
     }
+
+    @Test
+    @DisplayName("createGroupConversation — delegates to service and returns 201 CREATED")
+    void createGroupConversation_success() {
+        com.example.realtimechatonline.domain.dto.request.CreateGroupRequestDto request =
+                com.example.realtimechatonline.domain.dto.request.CreateGroupRequestDto.builder()
+                        .name("Alpha Project")
+                        .memberUserIds(List.of(2L, 3L))
+                        .build();
+
+        ConversationDto dto = ConversationDto.builder()
+                .id(10L)
+                .name("Alpha Project")
+                .type(ConversationType.GROUP)
+                .memberCount(3L)
+                .currentUserRole(com.example.realtimechatonline.domain.entity.ConversationMemberRole.ADMIN)
+                .build();
+
+        when(conversationService.createGroupConversation(request, "alice")).thenReturn(dto);
+
+        ResponseEntity<ApiResponse<ConversationDto>> response =
+                conversationController.createGroupConversation(request, authentication);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getData().getName()).isEqualTo("Alpha Project");
+        assertThat(response.getBody().getData().getMemberCount()).isEqualTo(3L);
+        assertThat(response.getBody().getData().getCurrentUserRole()).isEqualTo(com.example.realtimechatonline.domain.entity.ConversationMemberRole.ADMIN);
+    }
+
+    @Test
+    @DisplayName("getGroupMembers — delegates to service and returns 200 OK")
+    void getGroupMembers_success() {
+        com.example.realtimechatonline.domain.dto.response.GroupMemberResponseDto m1 =
+                com.example.realtimechatonline.domain.dto.response.GroupMemberResponseDto.builder()
+                        .userId(1L)
+                        .username("alice")
+                        .role(com.example.realtimechatonline.domain.entity.ConversationMemberRole.ADMIN)
+                        .isOnline(true)
+                        .build();
+
+        when(conversationService.getGroupMembers(10L, "alice")).thenReturn(List.of(m1));
+
+        ResponseEntity<ApiResponse<List<com.example.realtimechatonline.domain.dto.response.GroupMemberResponseDto>>> response =
+                conversationController.getGroupMembers(10L, authentication);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getData()).hasSize(1);
+        assertThat(response.getBody().getData().get(0).getUsername()).isEqualTo("alice");
+    }
+
+    @Test
+    @DisplayName("addGroupMembers — delegates to service and returns 200 OK")
+    void addGroupMembers_success() {
+        com.example.realtimechatonline.domain.dto.request.AddGroupMembersRequestDto request =
+                com.example.realtimechatonline.domain.dto.request.AddGroupMembersRequestDto.builder()
+                        .memberUserIds(List.of(4L))
+                        .build();
+        com.example.realtimechatonline.domain.dto.response.GroupMemberResponseDto m1 =
+                com.example.realtimechatonline.domain.dto.response.GroupMemberResponseDto.builder().userId(4L).username("dave").build();
+
+        when(conversationService.addGroupMembers(10L, request, "alice")).thenReturn(List.of(m1));
+
+        ResponseEntity<ApiResponse<List<com.example.realtimechatonline.domain.dto.response.GroupMemberResponseDto>>> response =
+                conversationController.addGroupMembers(10L, request, authentication);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getData()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("removeGroupMember — delegates to service and returns 200 OK")
+    void removeGroupMember_success() {
+        doNothing().when(conversationService).removeGroupMember(10L, 2L, "alice");
+
+        ResponseEntity<ApiResponse<Void>> response =
+                conversationController.removeGroupMember(10L, 2L, authentication);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getMessage()).isEqualTo("Member removed from group");
+        verify(conversationService).removeGroupMember(10L, 2L, "alice");
+    }
+
+    @Test
+    @DisplayName("leaveGroup — delegates to service and returns 200 OK")
+    void leaveGroup_success() {
+        com.example.realtimechatonline.domain.dto.request.LeaveGroupRequestDto request =
+                com.example.realtimechatonline.domain.dto.request.LeaveGroupRequestDto.builder().newAdminUserId(2L).build();
+        doNothing().when(conversationService).leaveGroup(10L, request, "alice");
+
+        ResponseEntity<ApiResponse<Void>> response =
+                conversationController.leaveGroup(10L, request, authentication);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getMessage()).isEqualTo("Left group conversation");
+        verify(conversationService).leaveGroup(10L, request, "alice");
+    }
+
+    @Test
+    @DisplayName("transferAdmin — delegates to service and returns 200 OK")
+    void transferAdmin_success() {
+        com.example.realtimechatonline.domain.dto.request.TransferAdminRequestDto request =
+                com.example.realtimechatonline.domain.dto.request.TransferAdminRequestDto.builder().newAdminUserId(2L).build();
+        doNothing().when(conversationService).transferAdmin(10L, request, "alice");
+
+        ResponseEntity<ApiResponse<Void>> response =
+                conversationController.transferAdmin(10L, request, authentication);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getMessage()).isEqualTo("Group admin transferred");
+        verify(conversationService).transferAdmin(10L, request, "alice");
+    }
+
+    @Test
+    @DisplayName("updateGroup — delegates to service and returns 200 OK")
+    void updateGroup_success() {
+        com.example.realtimechatonline.domain.dto.request.UpdateGroupRequestDto request =
+                com.example.realtimechatonline.domain.dto.request.UpdateGroupRequestDto.builder().name("Renamed Group").build();
+        ConversationDto dto = ConversationDto.builder().id(10L).name("Renamed Group").type(ConversationType.GROUP).build();
+
+        when(conversationService.updateGroup(10L, request, "alice")).thenReturn(dto);
+
+        ResponseEntity<ApiResponse<ConversationDto>> response =
+                conversationController.updateGroup(10L, request, authentication);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getData().getName()).isEqualTo("Renamed Group");
+    }
 }
+

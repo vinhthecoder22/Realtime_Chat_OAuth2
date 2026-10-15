@@ -42,4 +42,15 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
                                 @Param("targetReadId") Long targetReadId,
                                 @Param("readAt") Instant readAt);
 
+    List<ConversationMember> findByUserIdAndConversationIdIn(Long userId, List<Long> conversationIds);
+
+    @Query("SELECT cm.conversation.id, COUNT(cm) FROM ConversationMember cm WHERE cm.conversation.id IN :conversationIds AND cm.status = :status GROUP BY cm.conversation.id")
+    List<Object[]> countMembersByConversationIdInAndStatus(@Param("conversationIds") List<Long> conversationIds, @Param("status") ConversationMemberStatus status);
+
+    @Query("SELECT cm FROM ConversationMember cm JOIN FETCH cm.user WHERE cm.conversation.id = :conversationId AND cm.status = :status ORDER BY cm.role ASC, cm.joinedAt ASC")
+    List<ConversationMember> findActiveMembersWithUser(@Param("conversationId") Long conversationId, @Param("status") ConversationMemberStatus status);
+
+    @Query("SELECT cm FROM ConversationMember cm WHERE cm.conversation.id = :conversationId AND cm.user.id != :userId AND cm.status = :status ORDER BY cm.joinedAt ASC, cm.id ASC")
+    List<ConversationMember> findOtherActiveMembersOrderedByJoinedAt(@Param("conversationId") Long conversationId, @Param("userId") Long userId, @Param("status") ConversationMemberStatus status);
+
 }
