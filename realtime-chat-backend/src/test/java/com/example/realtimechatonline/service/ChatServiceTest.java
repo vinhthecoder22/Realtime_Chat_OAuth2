@@ -3,6 +3,7 @@ package com.example.realtimechatonline.service;
 import com.example.realtimechatonline.domain.dto.response.MessageResponseDto;
 import com.example.realtimechatonline.domain.dto.websocket.ChatMessageDto;
 import com.example.realtimechatonline.domain.entity.Conversation;
+import com.example.realtimechatonline.domain.entity.ConversationMemberStatus;
 import com.example.realtimechatonline.domain.entity.ConversationType;
 import com.example.realtimechatonline.domain.entity.Message;
 import com.example.realtimechatonline.domain.entity.MessageType;
@@ -213,4 +214,138 @@ class ChatServiceTest {
         verify(messagingTemplate).convertAndSendToUser(eq("alice"), eq("/queue/events"), any(com.example.realtimechatonline.domain.dto.websocket.UserEventDto.class));
         verify(messagingTemplate).convertAndSendToUser(eq("bob"), eq("/queue/events"), any(com.example.realtimechatonline.domain.dto.websocket.UserEventDto.class));
     }
+
+    @Test
+    @DisplayName("processAndSave — group conversation saves message and notifies active members")
+    void processAndSave_groupConversation_success_notifiesActiveMembers() {
+        Conversation groupChat = Conversation.builder().id(50L).type(ConversationType.GROUP).name("Test Group").build();
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
+        when(conversationRepository.findById(50L)).thenReturn(Optional.of(groupChat));
+        when(conversationMemberRepository.existsByConversationIdAndUserIdAndStatus(50L, 1L, ConversationMemberStatus.ACTIVE)).thenReturn(true);
+
+        com.example.realtimechatonline.domain.entity.ConversationMember cmAlice = com.example.realtimechatonline.domain.entity.ConversationMember.builder()
+                .id(101L).conversation(groupChat).user(alice).status(ConversationMemberStatus.ACTIVE).build();
+        com.example.realtimechatonline.domain.entity.ConversationMember cmBob = com.example.realtimechatonline.domain.entity.ConversationMember.builder()
+                .id(102L).conversation(groupChat).user(bob).status(ConversationMemberStatus.ACTIVE).build();
+
+        when(conversationMemberRepository.findByConversationIdAndStatus(50L, ConversationMemberStatus.ACTIVE)).thenReturn(List.of(cmAlice, cmBob));
+        when(messageRepository.countUnreadMessages(50L, 1L)).thenReturn(0L);
+        when(messageRepository.countUnreadMessages(50L, 2L)).thenReturn(1L);
+
+        Message savedMsg = Message.builder().id(1001L).content("Hello Group").sender(alice).conversation(groupChat).timestamp(java.time.Instant.now()).build();
+        when(messageRepository.save(any(Message.class))).thenReturn(savedMsg);
+
+        ChatMessageDto result = chatService.processAndSave(50L, "Hello Group", "alice");
+
+        assertThat(result.getId()).isEqualTo(1001L);
+        assertThat(result.getContent()).isEqualTo("Hello Group");
+        assertThat(result.getConversationId()).isEqualTo(50L);
+
+        verify(messagingTemplate).convertAndSendToUser(eq("alice"), eq("/queue/events"), any(com.example.realtimechatonline.domain.dto.websocket.UserEventDto.class));
+        verify(messagingTemplate).convertAndSendToUser(eq("bob"), eq("/queue/events"), any(com.example.realtimechatonline.domain.dto.websocket.UserEventDto.class));
+    }
+
+    @Test
+    @DisplayName("processAndSave — group conversation throws AccessDeniedException when sender is not active member")
+    void processAndSave_groupConversation_notActive_throwsAccessDenied() {
+        Conversation groupChat = Conversation.builder().id(50L).type(ConversationType.GROUP).name("Test Group").build();
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
+        when(conversationRepository.findById(50L)).thenReturn(Optional.of(groupChat));
+        when(conversationMemberRepository.existsByConversationIdAndUserIdAndStatus(50L, 1L, ConversationMemberStatus.ACTIVE)).thenReturn(false);
+
+        assertThatThrownBy(() -> chatService.processAndSave(50L, "Hello Group", "alice"))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("User is not an active member of this group conversation");
+
+        verify(messageRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("processAndSave — throws IllegalArgumentException when content is blank")
+    void processAndSave_blankContent_throwsException() {
+        assertThatThrownBy(() -> chatService.processAndSave(50L, "   ", "alice"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Message content cannot be blank");
+
+        verify(messageRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("processAndSave — throws IllegalArgumentException when content exceeds 2000 chars")
+    void processAndSave_tooLongContent_throwsException() {
+        String longContent = "a".repeat(2001);
+        assertThatThrownBy(() -> chatService.processAndSave(50L, longContent, "alice"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Message content exceeds maximum allowed length");
+
+        verify(messageRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("getHistoryByConversation — group conversation returns messages when user is active")
+    void getHistoryByConversation_group_activeMember_success() {
+        Conversation groupChat = Conversation.builder().id(50L).type(ConversationType.GROUP).name("Test Group").build();
+        when(conversationRepository.findById(50L)).thenReturn(Optional.of(groupChat));
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
+        when(conversationMemberRepository.existsByConversationIdAndUserIdAndStatus(50L, 1L, ConversationMemberStatus.ACTIVE)).thenReturn(true);
+
+        Message msg = Message.builder().id(100L).conversation(groupChat).sender(bob).content("Hi Alice").build();
+        MessageResponseDto dto = MessageResponseDto.builder().id(100L).senderUsername("bob").content("Hi Alice").build();
+
+        PageRequest pageable = PageRequest.of(0, 50);
+        when(messageRepository.findByConversationIdOrderByTimestampDesc(50L, pageable))
+                .thenReturn(new PageImpl<>(List.of(msg), pageable, 1));
+        when(messageMapper.toMessageResponse(msg)).thenReturn(dto);
+
+        Page<MessageResponseDto> result = chatService.getHistoryByConversation(50L, pageable, "alice");
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).getContent()).isEqualTo("Hi Alice");
+    }
+
+    @Test
+    @DisplayName("getHistoryByConversation — group conversation throws AccessDeniedException when user is not active")
+    void getHistoryByConversation_group_notActive_throwsAccessDenied() {
+        Conversation groupChat = Conversation.builder().id(50L).type(ConversationType.GROUP).name("Test Group").build();
+        when(conversationRepository.findById(50L)).thenReturn(Optional.of(groupChat));
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
+        when(conversationMemberRepository.existsByConversationIdAndUserIdAndStatus(50L, 1L, ConversationMemberStatus.ACTIVE)).thenReturn(false);
+
+        PageRequest pageable = PageRequest.of(0, 50);
+
+        assertThatThrownBy(() -> chatService.getHistoryByConversation(50L, pageable, "alice"))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("User is not an active member of this group conversation");
+    }
+
+    @Test
+    @DisplayName("validateConversationAccess — allows for active group member")
+    void validateConversationAccess_group_active_success() {
+        Conversation groupChat = Conversation.builder().id(50L).type(ConversationType.GROUP).name("Test Group").build();
+        when(conversationRepository.findById(50L)).thenReturn(Optional.of(groupChat));
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
+        when(conversationMemberRepository.existsByConversationIdAndUserIdAndStatus(50L, 1L, ConversationMemberStatus.ACTIVE)).thenReturn(true);
+
+        chatService.validateConversationAccess(50L, "alice");
+    }
+
+    @Test
+    @DisplayName("validateConversationAccess — throws AccessDeniedException for non-active group member")
+    void validateConversationAccess_group_notActive_throwsAccessDenied() {
+        Conversation groupChat = Conversation.builder().id(50L).type(ConversationType.GROUP).name("Test Group").build();
+        when(conversationRepository.findById(50L)).thenReturn(Optional.of(groupChat));
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
+        when(conversationMemberRepository.existsByConversationIdAndUserIdAndStatus(50L, 1L, ConversationMemberStatus.ACTIVE)).thenReturn(false);
+
+        assertThatThrownBy(() -> chatService.validateConversationAccess(50L, "alice"))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("User is not an active member of this group conversation");
+    }
+
+    @Test
+    @DisplayName("validateConversationAccess — allows for public conversation")
+    void validateConversationAccess_public_success() {
+        chatService.validateConversationAccess(1L, "alice");
+    }
 }
+

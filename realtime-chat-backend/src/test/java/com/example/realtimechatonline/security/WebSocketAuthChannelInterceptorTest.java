@@ -1,6 +1,7 @@
 package com.example.realtimechatonline.security;
 
 import com.example.realtimechatonline.domain.entity.Conversation;
+import com.example.realtimechatonline.domain.entity.ConversationMemberStatus;
 import com.example.realtimechatonline.domain.entity.ConversationType;
 import com.example.realtimechatonline.domain.entity.User;
 import com.example.realtimechatonline.repository.ConversationMemberRepository;
@@ -194,5 +195,145 @@ class WebSocketAuthChannelInterceptorTest {
         interceptor.preSend(message, channel);
 
         verify(presenceService).touchSession("sess-xyz");
+    }
+
+    @Test
+    @DisplayName("SUBSCRIBE — group chat allows when user is active member")
+    void subscribe_groupChat_activeMember_allowed() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setDestination("/topic/conversation.50");
+        accessor.setUser(auth);
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        Conversation groupConv = Conversation.builder().id(50L).type(ConversationType.GROUP).build();
+        when(conversationRepository.findById(50L)).thenReturn(Optional.of(groupConv));
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
+        when(conversationMemberRepository.existsByConversationIdAndUserIdAndStatus(50L, 1L, ConversationMemberStatus.ACTIVE)).thenReturn(true);
+
+        Message<?> result = interceptor.preSend(message, channel);
+        assertThat(result).isNotNull();
+    }
+
+    @Test
+    @DisplayName("SUBSCRIBE — group chat throws UNAUTHORIZED when user is not member")
+    void subscribe_groupChat_notMember_throwsUnauthorized() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setDestination("/topic/conversation.50");
+        accessor.setUser(auth);
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        Conversation groupConv = Conversation.builder().id(50L).type(ConversationType.GROUP).build();
+        when(conversationRepository.findById(50L)).thenReturn(Optional.of(groupConv));
+        when(userRepository.findByUsername("alice")).thenReturn(Optional.of(alice));
+        when(conversationMemberRepository.existsByConversationIdAndUserIdAndStatus(50L, 1L, ConversationMemberStatus.ACTIVE)).thenReturn(false);
+
+        assertThatThrownBy(() -> interceptor.preSend(message, channel))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessageContaining("UNAUTHORIZED");
+    }
+
+    @Test
+    @DisplayName("SUBSCRIBE — throws INVALID_DESTINATION for non-existent conversation")
+    void subscribe_conversation_notFound_throwsInvalidDestination() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setDestination("/topic/conversation.9999");
+        accessor.setUser(auth);
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        when(conversationRepository.findById(9999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, channel))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessageContaining("INVALID_DESTINATION");
+    }
+
+    @Test
+    @DisplayName("SUBSCRIBE — throws INVALID_DESTINATION for malformed conversation topic")
+    void subscribe_conversation_malformedTopic_throwsInvalidDestination() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setDestination("/topic/conversation.abc");
+        accessor.setUser(auth);
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, channel))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessageContaining("INVALID_DESTINATION");
+    }
+
+    @Test
+    @DisplayName("SUBSCRIBE — direct subscribe to /queue/ is rejected with FORBIDDEN")
+    void subscribe_directQueue_throwsForbidden() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setDestination("/queue/events");
+        accessor.setUser(auth);
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, channel))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessageContaining("FORBIDDEN");
+    }
+
+    @Test
+    @DisplayName("SUBSCRIBE — unknown destination is rejected with INVALID_DESTINATION")
+    void subscribe_unknownDestination_throwsInvalidDestination() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        accessor.setDestination("/topic/random.destination");
+        accessor.setUser(auth);
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, channel))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessageContaining("INVALID_DESTINATION");
+    }
+
+    @Test
+    @DisplayName("SEND — unauthenticated SEND is rejected with UNAUTHORIZED")
+    void send_unauthenticated_throwsUnauthorized() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
+        accessor.setDestination("/app/chat.sendMessage");
+        accessor.setUser(null);
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, channel))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessageContaining("UNAUTHORIZED");
+    }
+
+    @Test
+    @DisplayName("SEND — direct client SEND to /topic/public is rejected with FORBIDDEN")
+    void send_directToTopicPublic_throwsForbidden() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
+        accessor.setDestination("/topic/public");
+        accessor.setUser(auth);
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, channel))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessageContaining("FORBIDDEN");
+    }
+
+    @Test
+    @DisplayName("SEND — direct client SEND to /queue/events is rejected with FORBIDDEN")
+    void send_directToQueue_throwsForbidden() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
+        accessor.setDestination("/queue/events");
+        accessor.setUser(auth);
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        assertThatThrownBy(() -> interceptor.preSend(message, channel))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessageContaining("FORBIDDEN");
+    }
+
+    @Test
+    @DisplayName("SEND — valid SEND to /app/ destination is allowed")
+    void send_appDestination_allowed() {
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SEND);
+        accessor.setDestination("/app/chat.sendMessage");
+        accessor.setUser(auth);
+        Message<?> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        Message<?> result = interceptor.preSend(message, channel);
+        assertThat(result).isNotNull();
     }
 }
