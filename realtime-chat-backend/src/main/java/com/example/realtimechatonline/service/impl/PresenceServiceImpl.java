@@ -228,6 +228,12 @@ public class PresenceServiceImpl implements PresenceService {
         }
     }
 
+    @Override
+    public String getUsernameBySession(String sessionId) {
+        if (sessionId == null) return null;
+        return sessionToUser.get(sessionId);
+    }
+
     private void broadcastPresence(PresenceEventDto event) {
         if (messagingTemplateProvider != null) {
             SimpMessagingTemplate template = messagingTemplateProvider.getIfAvailable();

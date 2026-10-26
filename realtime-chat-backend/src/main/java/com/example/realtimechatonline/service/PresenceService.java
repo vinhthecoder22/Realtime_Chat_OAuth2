@@ -25,4 +25,6 @@ public interface PresenceService {
 
     List<UserPresenceDto> getAllOnlinePresence();
 
+    String getUsernameBySession(String sessionId);
+
 }

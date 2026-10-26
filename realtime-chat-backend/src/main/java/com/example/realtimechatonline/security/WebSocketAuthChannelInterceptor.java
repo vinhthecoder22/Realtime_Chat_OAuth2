@@ -66,6 +66,11 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
                 Authentication auth = tokenProvider.getAuthentication(token);
                 accessor.setUser(auth);
 
+                PresenceService presenceService = presenceServiceProvider.getIfAvailable();
+                if (presenceService != null && accessor.getSessionId() != null) {
+                    presenceService.addSession(auth.getName(), accessor.getSessionId());
+                }
+
             } catch (Exception e) {
                 log.warn("Kết nối WebSocket thất bại: Token không hợp lệ ({})", e.getMessage());
                 // Ném lỗi để Spring gửi STOMP ERROR frame về client

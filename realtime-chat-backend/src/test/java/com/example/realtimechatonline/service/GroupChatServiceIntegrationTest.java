@@ -552,4 +552,158 @@ class GroupChatServiceIntegrationTest {
         assertThat(paged.getContent()).extracting(ConversationDto::getType)
                 .contains(ConversationType.DIRECT, ConversationType.PUBLIC);
     }
+
+    // 16. markConversationAsRead trên Group Conversation
+    @Test
+    @DisplayName("Scenario 16: markConversationAsRead in GROUP updates unread count and rejects non-active members")
+    void markConversationAsRead_inGroupConversation() {
+        // Alice creates group with Bob and Charlie
+        CreateGroupRequestDto createReq = CreateGroupRequestDto.builder()
+                .name("Read Receipt Team")
+                .memberUserIds(List.of(bob.getId(), charlie.getId()))
+                .build();
+        ConversationDto groupDto = conversationService.createGroupConversation(createReq, alice.getUsername());
+        Conversation group = conversationRepository.findById(groupDto.getId()).orElseThrow();
+
+        // Bob sends 2 messages to the group
+        Message msg1 = messageRepository.save(Message.builder()
+                .conversation(group)
+                .sender(bob)
+                .content("Group msg 1")
+                .timestamp(Instant.now().minusSeconds(10))
+                .build());
+        Message msg2 = messageRepository.save(Message.builder()
+                .conversation(group)
+                .sender(bob)
+                .content("Group msg 2")
+                .timestamp(Instant.now())
+                .build());
+
+        // Charlie has 2 unread messages
+        assertThat(messageRepository.countUnreadMessages(group.getId(), charlie.getId())).isEqualTo(2L);
+        // Alice has 2 unread messages
+        assertThat(messageRepository.countUnreadMessages(group.getId(), alice.getId())).isEqualTo(2L);
+
+        // Charlie marks message 2 as read
+        var charlieReceipt = conversationService.markConversationAsRead(group.getId(), msg2.getId(), charlie.getUsername());
+        assertThat(charlieReceipt.getUnreadCount()).isEqualTo(0L);
+        assertThat(charlieReceipt.getLastReadMessageId()).isEqualTo(msg2.getId());
+        assertThat(messageRepository.countUnreadMessages(group.getId(), charlie.getId())).isEqualTo(0L);
+
+        // Alice's unread count is untouched
+        assertThat(messageRepository.countUnreadMessages(group.getId(), alice.getId())).isEqualTo(2L);
+
+        // Outsider (Dave) cannot mark as read
+        assertThatThrownBy(() -> conversationService.markConversationAsRead(group.getId(), msg2.getId(), dave.getUsername()))
+                .isInstanceOf(AccessDeniedException.class);
+
+        // Charlie leaves group
+        conversationService.leaveGroup(group.getId(), null, charlie.getUsername());
+
+        // Charlie is now LEFT -> cannot mark as read anymore
+        assertThatThrownBy(() -> conversationService.markConversationAsRead(group.getId(), msg2.getId(), charlie.getUsername()))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    // 17. Non-group conversation protection
+    @Test
+    @DisplayName("Scenario 17: group operations on non-group conversation throw IllegalArgumentException")
+    void groupOperations_onNonGroupConversation_throwsIllegalArgumentException() {
+        ConversationDto directDto = conversationService.getOrCreateDirectConversation(bob.getId(), alice.getUsername());
+        Long directId = directDto.getId();
+
+        assertThatThrownBy(() -> conversationService.getGroupMembers(directId, alice.getUsername()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("not a group");
+
+        assertThatThrownBy(() -> conversationService.addGroupMembers(
+                directId,
+                AddGroupMembersRequestDto.builder().memberUserIds(List.of(charlie.getId())).build(),
+                alice.getUsername()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("not a group");
+
+        assertThatThrownBy(() -> conversationService.removeGroupMember(directId, bob.getId(), alice.getUsername()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("not a group");
+
+        assertThatThrownBy(() -> conversationService.leaveGroup(directId, null, alice.getUsername()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("not a group");
+
+        assertThatThrownBy(() -> conversationService.transferAdmin(
+                directId,
+                TransferAdminRequestDto.builder().newAdminUserId(bob.getId()).build(),
+                alice.getUsername()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("not a group");
+
+        assertThatThrownBy(() -> conversationService.updateGroup(
+                directId,
+                UpdateGroupRequestDto.builder().name("New Name").build(),
+                alice.getUsername()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("not a group");
+    }
+
+    // 18. Transfer admin to oneself
+    @Test
+    @DisplayName("Scenario 18: transferAdmin - cannot transfer admin to self")
+    void transferAdmin_toSelf_throwsIllegalArgumentException() {
+        CreateGroupRequestDto createReq = CreateGroupRequestDto.builder()
+                .name("Self Admin Test")
+                .memberUserIds(List.of(bob.getId()))
+                .build();
+        ConversationDto groupDto = conversationService.createGroupConversation(createReq, alice.getUsername());
+
+        assertThatThrownBy(() -> conversationService.transferAdmin(
+                groupDto.getId(),
+                TransferAdminRequestDto.builder().newAdminUserId(alice.getId()).build(),
+                alice.getUsername()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Cannot transfer admin to yourself");
+    }
+
+    // 19. Add already active member
+    @Test
+    @DisplayName("Scenario 19: addGroupMembers - adding already active member throws IllegalArgumentException")
+    void addGroupMembers_alreadyActive_throwsIllegalArgumentException() {
+        CreateGroupRequestDto createReq = CreateGroupRequestDto.builder()
+                .name("Active Member Test")
+                .memberUserIds(List.of(bob.getId()))
+                .build();
+        ConversationDto groupDto = conversationService.createGroupConversation(createReq, alice.getUsername());
+
+        assertThatThrownBy(() -> conversationService.addGroupMembers(
+                groupDto.getId(),
+                AddGroupMembersRequestDto.builder().memberUserIds(List.of(bob.getId())).build(),
+                alice.getUsername()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("already an active member");
+    }
+
+    // 20. Non-positive member user IDs
+    @Test
+    @DisplayName("Scenario 20: invalid memberUserIds (negative or zero) throw IllegalArgumentException")
+    void invalidMemberUserIds_throwIllegalArgumentException() {
+        assertThatThrownBy(() -> conversationService.createGroupConversation(
+                CreateGroupRequestDto.builder().name("Invalid ID Group").memberUserIds(List.of(-1L)).build(),
+                alice.getUsername()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid user ID");
+
+        CreateGroupRequestDto createReq = CreateGroupRequestDto.builder()
+                .name("Valid Group")
+                .memberUserIds(List.of(bob.getId()))
+                .build();
+        ConversationDto groupDto = conversationService.createGroupConversation(createReq, alice.getUsername());
+
+        assertThatThrownBy(() -> conversationService.addGroupMembers(
+                groupDto.getId(),
+                AddGroupMembersRequestDto.builder().memberUserIds(List.of(0L)).build(),
+                alice.getUsername()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid user ID");
+    }
 }
+

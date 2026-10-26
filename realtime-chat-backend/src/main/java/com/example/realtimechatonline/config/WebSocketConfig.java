@@ -1,6 +1,7 @@
 package com.example.realtimechatonline.config;
 
 import com.example.realtimechatonline.security.WebSocketAuthChannelInterceptor;
+import com.example.realtimechatonline.security.WebSocketOutboundChannelInterceptor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
@@ -26,6 +27,7 @@ import java.util.List;
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final WebSocketAuthChannelInterceptor webSocketAuthChannelInterceptor;
+    private final WebSocketOutboundChannelInterceptor webSocketOutboundChannelInterceptor;
     private final AppProperties appProperties;
     private final ObjectProvider<PresenceService> presenceServiceProvider;
 
@@ -62,6 +64,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
         registration.interceptors(webSocketAuthChannelInterceptor);
+    }
+
+    @Override
+    public void configureClientOutboundChannel(ChannelRegistration registration) {
+        registration.interceptors(webSocketOutboundChannelInterceptor);
     }
 
     @Override

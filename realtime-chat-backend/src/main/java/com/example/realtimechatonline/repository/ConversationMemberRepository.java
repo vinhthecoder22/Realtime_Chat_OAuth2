@@ -29,6 +29,9 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
 
     long countByConversationIdAndStatus(Long conversationId, ConversationMemberStatus status);
 
+    @Query("SELECT cm.user.username FROM ConversationMember cm WHERE cm.conversation.id = :conversationId AND cm.status = :status")
+    List<String> findActiveUsernamesByConversationIdAndStatus(@Param("conversationId") Long conversationId, @Param("status") ConversationMemberStatus status);
+
     @EntityGraph(attributePaths = {"user"})
     List<ConversationMember> findByConversationIdIn(List<Long> conversationIds);
 

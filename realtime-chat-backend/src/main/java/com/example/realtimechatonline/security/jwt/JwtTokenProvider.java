@@ -16,6 +16,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
+import jakarta.annotation.PostConstruct;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.List;
@@ -30,10 +31,28 @@ public class JwtTokenProvider {
     @Value("${jwt.expiration-ms}")
     private long validityMs;
 
+    private SecretKey signingKey;
+
+    @PostConstruct
+    public void init() {
+        if (secretKey == null || secretKey.trim().isEmpty()) {
+            throw new IllegalStateException("JWT signing key (jwt.secret) must not be null or blank");
+        }
+        byte[] keyBytes = secretKey.getBytes(StandardCharsets.UTF_8);
+        if (keyBytes.length < 32) {
+            throw new IllegalStateException("JWT signing key (jwt.secret) is too short: must be at least 256 bits (32 bytes)");
+        }
+        try {
+            this.signingKey = Keys.hmacShaKeyFor(keyBytes);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Invalid JWT signing key configuration: " + ex.getMessage(), ex);
+        }
+    }
+
     // Key
 
     private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8));
+        return this.signingKey != null ? this.signingKey : Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8));
     }
 
     // Token generation

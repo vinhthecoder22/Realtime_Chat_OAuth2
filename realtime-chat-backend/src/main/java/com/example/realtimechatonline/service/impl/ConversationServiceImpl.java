@@ -15,6 +15,7 @@ import com.example.realtimechatonline.repository.FriendRequestRepository;
 import com.example.realtimechatonline.repository.MessageRepository;
 import com.example.realtimechatonline.repository.UserRepository;
 import com.example.realtimechatonline.service.ConversationService;
+import com.example.realtimechatonline.service.GroupMembershipService;
 import com.example.realtimechatonline.service.PresenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +45,7 @@ public class ConversationServiceImpl implements ConversationService {
     private final UserMapper userMapper;
     private final SimpMessagingTemplate messagingTemplate;
     private final PresenceService presenceService;
+    private final GroupMembershipService groupMembershipService;
 
     @Override
     @Transactional
@@ -538,6 +540,10 @@ public class ConversationServiceImpl implements ConversationService {
 
         conversationMemberRepository.saveAll(membersToSave);
 
+        if (groupMembershipService != null) {
+            groupMembershipService.invalidateGroup(conversation.getId());
+        }
+
         return ConversationDto.builder()
                 .id(conversation.getId())
                 .type(conversation.getType())
@@ -664,6 +670,10 @@ public class ConversationServiceImpl implements ConversationService {
             }
         }
 
+        if (groupMembershipService != null) {
+            groupMembershipService.invalidateGroup(conversationId);
+        }
+
         return getGroupMembers(conversationId, currentUsername);
     }
 
@@ -699,6 +709,18 @@ public class ConversationServiceImpl implements ConversationService {
         targetMember.setStatus(ConversationMemberStatus.REMOVED);
         targetMember.setLeftAt(Instant.now());
         conversationMemberRepository.save(targetMember);
+
+        if (groupMembershipService != null) {
+            groupMembershipService.removeMember(conversationId, targetMember.getUser().getUsername());
+        }
+
+        if (messagingTemplate != null) {
+            UserEventDto kickedEvent = UserEventDto.builder()
+                    .type("MEMBER_KICKED")
+                    .conversationId(conversationId)
+                    .build();
+            messagingTemplate.convertAndSendToUser(targetMember.getUser().getUsername(), "/queue/events", kickedEvent);
+        }
     }
 
     @Override
@@ -746,6 +768,10 @@ public class ConversationServiceImpl implements ConversationService {
         callerMember.setRole(ConversationMemberRole.MEMBER);
         callerMember.setLeftAt(now);
         conversationMemberRepository.save(callerMember);
+
+        if (groupMembershipService != null) {
+            groupMembershipService.removeMember(conversationId, callerMember.getUser().getUsername());
+        }
     }
 
     @Override
@@ -784,6 +810,10 @@ public class ConversationServiceImpl implements ConversationService {
         targetMember.setRole(ConversationMemberRole.ADMIN);
         callerMember.setRole(ConversationMemberRole.MEMBER);
         conversationMemberRepository.saveAll(List.of(targetMember, callerMember));
+
+        if (groupMembershipService != null) {
+            groupMembershipService.invalidateGroup(conversationId);
+        }
     }
 
     @Override
