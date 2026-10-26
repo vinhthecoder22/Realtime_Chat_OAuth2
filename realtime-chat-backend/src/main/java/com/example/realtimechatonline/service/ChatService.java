@@ -13,6 +13,8 @@ public interface ChatService {
 
     ChatMessageDto processAndSave(Long conversationId, String content, String senderUsername);
 
+    void validateConversationAccess(Long conversationId, String username);
+
     ChatMessageDto buildJoinMessage(String username);
 
     ChatMessageDto buildLeaveMessage(String username);

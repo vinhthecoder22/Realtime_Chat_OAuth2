@@ -1,6 +1,5 @@
 package com.example.realtimechatonline.controller;
 
-import com.example.realtimechatonline.domain.dto.websocket.ChatMessageDto;
 import lombok.RequiredArgsConstructor;
 import com.example.realtimechatonline.base.RestApiV1;
 import com.example.realtimechatonline.common.ApiResponse;
@@ -11,9 +10,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.messaging.handler.annotation.MessageMapping;
-import org.springframework.messaging.handler.annotation.SendTo;
-import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -63,16 +59,5 @@ public class ChatController {
                 .message("Message history retrieved")
                 .data(chatService.getHistoryByConversation(conversationId, pageable, authentication.getName()))
                 .build());
-    }
-
-    @MessageMapping("/chat.typing")
-    @SendTo("/topic/public")
-    public ChatMessageDto processTyping(ChatMessageDto message, StompHeaderAccessor headerAccessor) {
-        if (headerAccessor.getUser() != null) {
-            message.setSender(headerAccessor.getUser().getName());
-        } else {
-            message.setSender(null);
-        }
-        return message;
     }
 }

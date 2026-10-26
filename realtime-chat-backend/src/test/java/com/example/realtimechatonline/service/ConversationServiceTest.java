@@ -41,6 +41,7 @@ class ConversationServiceTest {
     @Mock UserMapper userMapper;
     @Mock org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
     @Mock com.example.realtimechatonline.service.PresenceService presenceService;
+    @Mock com.example.realtimechatonline.service.GroupMembershipService groupMembershipService;
 
     @InjectMocks ConversationServiceImpl conversationService;
 

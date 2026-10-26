@@ -117,4 +117,83 @@ class WebSocketControllerTest {
         verify(chatService).buildLeaveMessage("real_user");
         verify(messagingTemplate).convertAndSend("/topic/public", outbound);
     }
+
+    @Test
+    @DisplayName("processTyping — sends to /topic/public when conversationId is null")
+    void processTyping_nullConversationId_sendsToPublic() {
+        when(principal.getName()).thenReturn("real_user");
+        headerAccessor.setUser(principal);
+
+        ChatMessageDto inbound = ChatMessageDto.builder().sender("fake_user").content("true").type(MessageType.TYPING).build();
+
+        webSocketController.processTyping(inbound, headerAccessor);
+
+        verify(messagingTemplate).convertAndSend(eq("/topic/public"), argThat((ChatMessageDto dto) ->
+                dto.getType() == MessageType.TYPING &&
+                        "real_user".equals(dto.getSender()) &&
+                        "true".equals(dto.getContent()) &&
+                        dto.getConversationId() == null
+        ));
+    }
+
+    @Test
+    @DisplayName("processTyping — sends to conversation topic when access is validated")
+    void processTyping_withConversationId_validAccess_sendsToTopic() {
+        when(principal.getName()).thenReturn("real_user");
+        headerAccessor.setUser(principal);
+
+        ChatMessageDto inbound = ChatMessageDto.builder().conversationId(15L).sender("fake_user").content("true").type(MessageType.TYPING).build();
+
+        doNothing().when(chatService).validateConversationAccess(15L, "real_user");
+
+        webSocketController.processTyping(inbound, headerAccessor);
+
+        verify(chatService).validateConversationAccess(15L, "real_user");
+        verify(messagingTemplate).convertAndSend(eq("/topic/conversation.15"), argThat((ChatMessageDto dto) ->
+                dto.getType() == MessageType.TYPING &&
+                        "real_user".equals(dto.getSender()) &&
+                        "true".equals(dto.getContent()) &&
+                        Long.valueOf(15L).equals(dto.getConversationId())
+        ));
+    }
+
+    @Test
+    @DisplayName("processTyping — rejects when access validation fails (no message sent)")
+    void processTyping_withConversationId_accessDenied_noMessageSent() {
+        when(principal.getName()).thenReturn("real_user");
+        headerAccessor.setUser(principal);
+
+        ChatMessageDto inbound = ChatMessageDto.builder().conversationId(15L).sender("fake_user").content("true").type(MessageType.TYPING).build();
+
+        doThrow(new org.springframework.security.access.AccessDeniedException("Not member"))
+                .when(chatService).validateConversationAccess(15L, "real_user");
+
+        webSocketController.processTyping(inbound, headerAccessor);
+
+        verify(chatService).validateConversationAccess(15L, "real_user");
+        verifyNoInteractions(messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("processTyping — unauthenticated typing attempt is safely ignored")
+    void processTyping_unauthenticated_ignored() {
+        headerAccessor.setUser(null);
+        ChatMessageDto inbound = ChatMessageDto.builder().conversationId(15L).sender("fake_user").content("true").type(MessageType.TYPING).build();
+
+        webSocketController.processTyping(inbound, headerAccessor);
+
+        verifyNoInteractions(chatService);
+        verifyNoInteractions(messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("handleException — sends error to user queue /queue/errors")
+    void handleException_sendsToUserErrorQueue() {
+        when(principal.getName()).thenReturn("real_user");
+        headerAccessor.setUser(principal);
+
+        webSocketController.handleException(new RuntimeException("Something went wrong"), headerAccessor);
+
+        verify(messagingTemplate).convertAndSendToUser(eq("real_user"), eq("/queue/errors"), any(java.util.Map.class));
+    }
 }
