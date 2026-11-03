@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { avatarColor, initials } from '../../utils/helpers';
 
-const MessageItem = memo(({ msg, isMe, isConsecutive }) => {
+const MessageItem = memo(({ msg, isMe, isConsecutive, receiptStatus }) => {
   // Xử lý render cho tin nhắn hệ thống (Join/Leave)
   if (msg.type === "JOIN" || msg.type === "LEAVE") {
     const isJoin = msg.type === "JOIN";
@@ -27,6 +27,15 @@ const MessageItem = memo(({ msg, isMe, isConsecutive }) => {
           <span className="msg-time">{msg.time}</span>
         </div>
         <div className="msg-bubble">{msg.content}</div>
+        {receiptStatus && (
+          <div className="msg-receipt">
+            {receiptStatus === 'SEEN' ? (
+              <span className="receipt-seen">Đã xem</span>
+            ) : (
+              <span className="receipt-sent">Đã gửi</span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import MessageItem from './MessageItem'; // Import Component vừa tách
 
-const MessageList = ({ messages, currentUser, typers }) => {
+const MessageList = ({ messages, currentUser, typers, loading, activeConversation }) => {
   const bottomRef = useRef(null);
 
   // Tự động cuộn xuống cuối cùng khi có tin nhắn mới hoặc có người đang gõ
@@ -9,15 +9,44 @@ const MessageList = ({ messages, currentUser, typers }) => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, typers]);
 
+  // Xác định vị trí tin nhắn cuối cùng do chính currentUser gửi trong DIRECT chat
+  const isDirect = activeConversation?.type === 'DIRECT';
+  let lastSentIndex = -1;
+  if (isDirect) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].sender === currentUser && messages[i].type === "CHAT") {
+        lastSentIndex = i;
+        break;
+      }
+    }
+  }
+
   return (
     <div className="messages-wrap" id="messages-wrap">
       <div className="messages">
         {/* Lời chào hệ thống */}
         <div className="msg-system">
           <div className="sys-line"></div>
-          <span>Welcome to ChatWithMe</span>
+          <span>
+            {activeConversation?.type === 'GROUP'
+              ? `Chào mừng đến với ${activeConversation.name || 'nhóm trò chuyện'}`
+              : 'Welcome to ChatWithMe'}
+          </span>
           <div className="sys-line"></div>
         </div>
+
+        {loading && (
+          <div className="empty-chat-state">
+            <p>Đang tải tin nhắn...</p>
+          </div>
+        )}
+
+        {!loading && messages.length === 0 && (
+          <div className="empty-chat-state">
+            <div className="empty-chat-icon">💬</div>
+            <p>Chưa có tin nhắn nào. Hãy gửi lời chào để bắt đầu cuộc trò chuyện!</p>
+          </div>
+        )}
         
         {/* Render danh sách tin nhắn */}
         {messages.map((msg, index) => {
@@ -41,12 +70,23 @@ const MessageList = ({ messages, currentUser, typers }) => {
             }
           }
 
+          let receiptStatus = null;
+          if (isDirect && index === lastSentIndex && msg.id) {
+            const otherReadId = activeConversation?.otherLastReadMessageId;
+            if (otherReadId && msg.id <= otherReadId) {
+              receiptStatus = 'SEEN';
+            } else {
+              receiptStatus = 'SENT';
+            }
+          }
+
           return (
             <MessageItem 
               key={msg.internalId || index} 
               msg={msg} 
               isMe={msg.sender === currentUser} 
               isConsecutive={isConsecutive} 
+              receiptStatus={receiptStatus}
             />
           );
         })}
