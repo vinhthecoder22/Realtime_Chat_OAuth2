@@ -1,6 +1,5 @@
 package com.example.realtimechatonline.controller;
 
-import com.example.realtimechatonline.domain.dto.websocket.ChatMessageDto;
 import lombok.RequiredArgsConstructor;
 import com.example.realtimechatonline.base.RestApiV1;
 import com.example.realtimechatonline.common.ApiResponse;
@@ -11,9 +10,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.messaging.handler.annotation.MessageMapping;
-import org.springframework.messaging.handler.annotation.SendTo;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
@@ -48,11 +46,18 @@ public class ChatController {
                 .build());
     }
 
-    @MessageMapping("/chat.typing")
-    @SendTo("/topic/public")
-    public ChatMessageDto processTyping(ChatMessageDto message) {
-        // Đơn giản là nhận vào và broadcast nguyên xi ra cho mọi người trong phòng
-        // Dữ liệu sẽ có dạng: { sender: "userA", type: "TYPING", content: "true" }
-        return message;
+    @GetMapping("/{conversationId}/messages")
+    public ResponseEntity<ApiResponse<Page<MessageResponseDto>>> getConversationHistoryPaged(
+            @PathVariable Long conversationId,
+            @RequestParam(defaultValue = "0")  int page,
+            @RequestParam(defaultValue = "50") int size,
+            org.springframework.security.core.Authentication authentication) {
+
+        PageRequest pageable = PageRequest.of(page, size, Sort.by("timestamp").descending());
+        return ResponseEntity.ok(ApiResponse.<Page<MessageResponseDto>>builder()
+                .status(HttpStatus.OK)
+                .message("Message history retrieved")
+                .data(chatService.getHistoryByConversation(conversationId, pageable, authentication.getName()))
+                .build());
     }
 }

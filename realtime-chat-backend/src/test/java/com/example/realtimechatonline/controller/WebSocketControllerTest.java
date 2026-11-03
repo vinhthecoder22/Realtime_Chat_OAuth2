@@ -1,0 +1,199 @@
+package com.example.realtimechatonline.controller;
+
+import com.example.realtimechatonline.domain.dto.websocket.ChatMessageDto;
+import com.example.realtimechatonline.domain.entity.MessageType;
+import com.example.realtimechatonline.service.ChatService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
+
+import java.security.Principal;
+
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+@DisplayName("WebSocketController unit tests")
+class WebSocketControllerTest {
+
+    @Mock
+    private ChatService chatService;
+
+    @Mock
+    private SimpMessagingTemplate messagingTemplate;
+
+    @InjectMocks
+    private WebSocketController webSocketController;
+
+    private StompHeaderAccessor headerAccessor;
+    private Principal principal;
+
+    @BeforeEach
+    void setUp() {
+        headerAccessor = StompHeaderAccessor.create(org.springframework.messaging.simp.stomp.StompCommand.MESSAGE);
+        principal = mock(Principal.class);
+    }
+
+    @Test
+    @DisplayName("joinMessage — derives sender from Principal, ignores payload")
+    void joinMessage_derivesFromPrincipal() {
+        when(principal.getName()).thenReturn("real_user");
+        headerAccessor.setUser(principal);
+
+        ChatMessageDto inbound = ChatMessageDto.builder().sender("fake_user").type(MessageType.JOIN).build();
+        ChatMessageDto outbound = ChatMessageDto.builder().sender("real_user").type(MessageType.JOIN).build();
+
+        when(chatService.buildJoinMessage("real_user")).thenReturn(outbound);
+
+        webSocketController.joinMessage(inbound, headerAccessor);
+
+        verify(chatService).buildJoinMessage("real_user");
+        verify(messagingTemplate).convertAndSend("/topic/public", outbound);
+    }
+
+    @Test
+    @DisplayName("joinMessage — unauthenticated is rejected safely")
+    void joinMessage_unauthenticatedRejected() {
+        headerAccessor.setUser(null);
+        ChatMessageDto inbound = ChatMessageDto.builder().sender("fake_user").type(MessageType.JOIN).build();
+
+        webSocketController.joinMessage(inbound, headerAccessor);
+
+        verifyNoInteractions(chatService);
+        verifyNoInteractions(messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("sendMessage — derives sender from Principal, ignores payload")
+    void sendMessage_derivesFromPrincipal() {
+        when(principal.getName()).thenReturn("real_user");
+        headerAccessor.setUser(principal);
+
+        ChatMessageDto inbound = ChatMessageDto.builder().sender("fake_user").content("Hello").type(MessageType.CHAT).build();
+        ChatMessageDto outbound = ChatMessageDto.builder().sender("real_user").content("Hello").type(MessageType.CHAT).build();
+
+        when(chatService.processAndSave(null, "Hello", "real_user")).thenReturn(outbound);
+
+        webSocketController.sendMessage(inbound, headerAccessor);
+
+        verify(chatService).processAndSave(null, "Hello", "real_user");
+        verify(messagingTemplate).convertAndSend("/topic/public", outbound);
+    }
+
+    @Test
+    @DisplayName("sendMessage — sends to conversation topic when conversationId is present")
+    void sendMessage_toConversationTopic() {
+        when(principal.getName()).thenReturn("real_user");
+        headerAccessor.setUser(principal);
+
+        ChatMessageDto inbound = ChatMessageDto.builder().conversationId(2L).sender("fake_user").content("Hello Direct").type(MessageType.CHAT).build();
+        ChatMessageDto outbound = ChatMessageDto.builder().conversationId(2L).sender("real_user").content("Hello Direct").type(MessageType.CHAT).build();
+
+        when(chatService.processAndSave(2L, "Hello Direct", "real_user")).thenReturn(outbound);
+
+        webSocketController.sendMessage(inbound, headerAccessor);
+
+        verify(chatService).processAndSave(2L, "Hello Direct", "real_user");
+        verify(messagingTemplate).convertAndSend("/topic/conversation.2", outbound);
+    }
+
+    @Test
+    @DisplayName("leaveMessage — derives sender from Principal")
+    void leaveMessage_derivesFromPrincipal() {
+        when(principal.getName()).thenReturn("real_user");
+        headerAccessor.setUser(principal);
+
+        ChatMessageDto outbound = ChatMessageDto.builder().sender("real_user").type(MessageType.LEAVE).build();
+
+        when(chatService.buildLeaveMessage("real_user")).thenReturn(outbound);
+
+        webSocketController.leaveMessage(headerAccessor);
+
+        verify(chatService).buildLeaveMessage("real_user");
+        verify(messagingTemplate).convertAndSend("/topic/public", outbound);
+    }
+
+    @Test
+    @DisplayName("processTyping — sends to /topic/public when conversationId is null")
+    void processTyping_nullConversationId_sendsToPublic() {
+        when(principal.getName()).thenReturn("real_user");
+        headerAccessor.setUser(principal);
+
+        ChatMessageDto inbound = ChatMessageDto.builder().sender("fake_user").content("true").type(MessageType.TYPING).build();
+
+        webSocketController.processTyping(inbound, headerAccessor);
+
+        verify(messagingTemplate).convertAndSend(eq("/topic/public"), argThat((ChatMessageDto dto) ->
+                dto.getType() == MessageType.TYPING &&
+                        "real_user".equals(dto.getSender()) &&
+                        "true".equals(dto.getContent()) &&
+                        dto.getConversationId() == null
+        ));
+    }
+
+    @Test
+    @DisplayName("processTyping — sends to conversation topic when access is validated")
+    void processTyping_withConversationId_validAccess_sendsToTopic() {
+        when(principal.getName()).thenReturn("real_user");
+        headerAccessor.setUser(principal);
+
+        ChatMessageDto inbound = ChatMessageDto.builder().conversationId(15L).sender("fake_user").content("true").type(MessageType.TYPING).build();
+
+        doNothing().when(chatService).validateConversationAccess(15L, "real_user");
+
+        webSocketController.processTyping(inbound, headerAccessor);
+
+        verify(chatService).validateConversationAccess(15L, "real_user");
+        verify(messagingTemplate).convertAndSend(eq("/topic/conversation.15"), argThat((ChatMessageDto dto) ->
+                dto.getType() == MessageType.TYPING &&
+                        "real_user".equals(dto.getSender()) &&
+                        "true".equals(dto.getContent()) &&
+                        Long.valueOf(15L).equals(dto.getConversationId())
+        ));
+    }
+
+    @Test
+    @DisplayName("processTyping — rejects when access validation fails (no message sent)")
+    void processTyping_withConversationId_accessDenied_noMessageSent() {
+        when(principal.getName()).thenReturn("real_user");
+        headerAccessor.setUser(principal);
+
+        ChatMessageDto inbound = ChatMessageDto.builder().conversationId(15L).sender("fake_user").content("true").type(MessageType.TYPING).build();
+
+        doThrow(new org.springframework.security.access.AccessDeniedException("Not member"))
+                .when(chatService).validateConversationAccess(15L, "real_user");
+
+        webSocketController.processTyping(inbound, headerAccessor);
+
+        verify(chatService).validateConversationAccess(15L, "real_user");
+        verifyNoInteractions(messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("processTyping — unauthenticated typing attempt is safely ignored")
+    void processTyping_unauthenticated_ignored() {
+        headerAccessor.setUser(null);
+        ChatMessageDto inbound = ChatMessageDto.builder().conversationId(15L).sender("fake_user").content("true").type(MessageType.TYPING).build();
+
+        webSocketController.processTyping(inbound, headerAccessor);
+
+        verifyNoInteractions(chatService);
+        verifyNoInteractions(messagingTemplate);
+    }
+
+    @Test
+    @DisplayName("handleException — sends error to user queue /queue/errors")
+    void handleException_sendsToUserErrorQueue() {
+        when(principal.getName()).thenReturn("real_user");
+        headerAccessor.setUser(principal);
+
+        webSocketController.handleException(new RuntimeException("Something went wrong"), headerAccessor);
+
+        verify(messagingTemplate).convertAndSendToUser(eq("real_user"), eq("/queue/errors"), any(java.util.Map.class));
+    }
+}

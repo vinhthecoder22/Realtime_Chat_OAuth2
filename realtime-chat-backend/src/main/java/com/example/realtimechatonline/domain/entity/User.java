@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
+import java.time.Instant;
+
 @Entity
 @Table(name = "users")
 @AllArgsConstructor
@@ -47,4 +49,8 @@ public class User {
     @Column(name = "auth_provider", nullable = false)
     @Builder.Default
     AuthProvider authProvider = AuthProvider.LOCAL;
+
+    @Column(name = "last_seen_at")
+    Instant lastSeenAt;
+
 }

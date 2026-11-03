@@ -56,7 +56,7 @@ const MessageInput = ({ onSendMessage, onTyping, disabled }) => {
         <textarea
           ref={textareaRef}
           className="msg-input"
-          placeholder="Message #public…"
+          placeholder="Message..."
           rows="1"
           maxLength={CONFIG.MSG_MAX_LENGTH}
           value={text}

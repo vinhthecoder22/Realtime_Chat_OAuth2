@@ -129,6 +129,18 @@ public class GlobalExceptionHandlerImpl implements IGlobalExceptionHandler {
                 ));
     }
 
+    @Override
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException e) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponse.of(
+                        HttpStatus.BAD_REQUEST.value(),
+                        "Bad Request",
+                        e.getMessage()
+                ));
+    }
+
     // 401 Unauthorized
 
     @ExceptionHandler(JwtException.class)
@@ -149,6 +161,19 @@ public class GlobalExceptionHandlerImpl implements IGlobalExceptionHandler {
                 .body(ErrorResponse.of(
                         HttpStatus.UNAUTHORIZED.value(),
                         "Unauthorized",
+                        e.getMessage()
+                ));
+    }
+
+    // 403 Forbidden
+
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDenied(org.springframework.security.access.AccessDeniedException e) {
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of(
+                        HttpStatus.FORBIDDEN.value(),
+                        "Forbidden",
                         e.getMessage()
                 ));
     }

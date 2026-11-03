@@ -12,7 +12,9 @@ import lombok.experimental.FieldDefaults;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class ChatMessageDto {
 
+    Long id;
     MessageType type;
+    Long conversationId;
     String content;
     String sender;
     String time;
